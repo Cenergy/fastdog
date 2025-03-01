@@ -9,7 +9,12 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[str] = []
 
     # 数据库设置
+    # SQLite: sqlite://./test.db
+    # PostgreSQL: postgresql://user:password@localhost:5432/dbname
+    # MySQL: mysql://user:password@localhost:3306/dbname
     DATABASE_URL: str = "sqlite://./test.db"
+    DATABASE_POOL_SIZE: int = 20  # 连接池大小
+    DATABASE_POOL_RECYCLE: int = 300  # 连接回收时间（秒）
 
     # 日志设置
     LOG_LEVEL: str = "INFO"

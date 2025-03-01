@@ -5,6 +5,7 @@ passlib[bcrypt]
 python-jose[cryptography]
 aerich
 loguru
+tenacity
 # aerich init-db
 # aerich migrate
 # aerich upgrade
