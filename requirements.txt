@@ -1,0 +1,9 @@
+fastapi[all]
+tortoise-orm
+pydantic-settings
+passlib[bcrypt]
+python-jose[cryptography]
+aerich
+# aerich init-db
+# aerich migrate
+# aerich upgrade
