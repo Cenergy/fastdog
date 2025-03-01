@@ -4,6 +4,7 @@ pydantic-settings
 passlib[bcrypt]
 python-jose[cryptography]
 aerich
+loguru
 # aerich init-db
 # aerich migrate
 # aerich upgrade

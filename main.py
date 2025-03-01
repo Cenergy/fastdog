@@ -2,20 +2,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import init_db, close_db
+from core.logging import setup_logging
 from api.v1.api import api_router
+from core.middleware.cors import setup_cors_middleware
+from core.middleware.error_handler import setup_exception_handlers
+from core.middleware.rate_limit import RateLimitMiddleware
 
+# 初始化日志系统
+logger = setup_logging()
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
-# 设置CORS
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# 配置中间件
+app = setup_cors_middleware(app)
+app = setup_exception_handlers(app)
+app.add_middleware(RateLimitMiddleware)
 
 @app.on_event("startup")
 async def startup_event():
@@ -30,5 +31,13 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/")
 async def root():
     return {"message": f"Welcome to {settings.PROJECT_NAME}"}
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "database": "connected"
+    }
 
 
