@@ -13,9 +13,13 @@ from core.security import verify_password
 from apps.users.crud import get_user
 from apps.users.models import User_Pydantic
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/login/access-token",
+    auto_error=True,
+    description="使用邮箱作为用户名，输入密码进行登录"
+)
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User_Pydantic:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> Optional[User_Pydantic]:
     """获取当前用户
 
     Args:
@@ -42,10 +46,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User_Pydantic
     except (JWTError, ValidationError):
         raise credentials_exception
     
-    user = await get_user(int(user_id))
-    if user is None:
-        raise credentials_exception
-    return user
+    try:
+        user = await get_user(int(user_id))
+        if user is None:
+            raise credentials_exception
+        return user
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取用户信息失败"
+        )
 
 async def get_current_active_user(current_user: User_Pydantic = Depends(get_current_user)) -> User_Pydantic:
     """获取当前活跃用户
@@ -73,11 +83,11 @@ async def get_current_superuser(current_user: User_Pydantic = Depends(get_curren
         User_Pydantic: 用户信息
 
     Raises:
-        HTTPException: 用户不是超级用户时抛出
+        HTTPException: 用户不是超级用户或管理员时抛出
     """
-    if not current_user.is_superuser:
+    if not current_user.is_superuser and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="权限不足，需要超级用户权限"
+            detail="需要超级用户或管理员权限"
         )
     return current_user

@@ -47,10 +47,22 @@ def get_db_config() -> Dict[str, Any]:
             logger.warning(f"未找到数据库类型 {db_type} 的连接池配置，将使用默认配置")
             db_type = 'sqlite'
 
-        config = generate_config(
-            db_url=settings.DATABASE_URL,
-            app_modules={'models': ALL_MODELS}
-        )
+        config = {
+            'connections': {
+                'default': {
+                    'engine': 'tortoise.backends.sqlite',
+                    'credentials': {
+                        'file_path': settings.DATABASE_URL.replace('sqlite://', '')
+                    }
+                }
+            },
+            'apps': {
+                'models': {
+                    'models': [*ALL_MODELS,'aerich.models'],
+                    'default_connection': 'default'
+                }
+            }
+        }
         
         # 添加对应数据库类型的连接池配置
         for db_config in config['connections'].values():

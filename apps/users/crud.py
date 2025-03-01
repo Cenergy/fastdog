@@ -9,17 +9,41 @@ async def get_user(user_id: int):
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="User not found")
 
-async def get_user_by_email(email: str):
-    try:
-        return await User_Pydantic.from_queryset_single(User.get(email=email))
-    except DoesNotExist:
-        return None
+async def get_user_by_username_or_email(username_or_email: str):
+    """通过用户名或邮箱获取用户
 
-async def create_user(user: UserCreate):
-    hashed_password = get_password_hash(user.password)
-    user_dict = user.model_dump()
-    del user_dict["password"]
-    user_dict["hashed_password"] = hashed_password
+    Args:
+        username_or_email: 用户名或邮箱
+
+    Returns:
+        User: 用户对象，如果未找到则返回None
+    """
+    try:
+        return await User.get(email=username_or_email)
+    except DoesNotExist:
+        try:
+            return await User.get(username=username_or_email)
+        except DoesNotExist:
+            return None
+
+async def get_user_by_username_or_email(username_or_email: str):
+    """通过用户名或邮箱获取用户
+
+    Args:
+        username_or_email: 用户名或邮箱
+
+    Returns:
+        User: 用户对象，如果未找到则返回None
+    """
+    try:
+        return await User.get(email=username_or_email)
+    except DoesNotExist:
+        try:
+            return await User.get(username=username_or_email)
+        except DoesNotExist:
+            return None
+
+async def create_user(user_dict: dict):
     try:
         user_obj = await User.create(**user_dict)
         return await User_Pydantic.from_tortoise_orm(user_obj)
