@@ -1,0 +1,14 @@
+{
+    "name": "fastdog",
+    "version": "1.0.0",
+    "description": "狗狗能有什么坏心思。\r fastapi框架。\r hello world!\r [![simpleui](https://img.shields.io/badge/developing%20with-Simpleui-2077ff.svg)](https://github.com/newpanjing/simpleui)\r 这是一个只是接口服务的应用",
+    "main": "index.js",
+    "scripts": {
+      "dev": "uvicorn main:app --reload",
+      "makemigrations": "python3 manage.py makemigrations",
+      "migrate": "python3 manage.py migrate",
+      "addRemote": "git remote add gishai root@122.51.49.230:/home/git/doggo",
+      "pushRemote": "git push --all gishai"
+    }
+  }
+  
