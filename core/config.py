@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 邮箱验证令牌有效期（分钟）
 
     # 数据库设置
-    DATABASE_URL: str = "sqlite://./test.db"
+    DATABASE_URL: str = "sqlite://./data/test.db"
     DATABASE_POOL_SIZE: int = 20  # 连接池大小
     DATABASE_POOL_RECYCLE: int = 300  # 连接回收时间（秒）
 

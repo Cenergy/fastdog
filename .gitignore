@@ -126,6 +126,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-.db
-.db-shm
-.db-wal
+
+# Database files
+data/
+*.db
+*.db-shm
+*.db-wal
