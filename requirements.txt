@@ -8,6 +8,7 @@ loguru
 tenacity
 fastapi-mail
 bcrypt==4.0.1
+argon2-cffi
 # aerich init-db
 # aerich migrate
 # aerich upgrade

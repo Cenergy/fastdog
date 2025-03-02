@@ -10,12 +10,12 @@ from core.app_models import ALL_MODELS
 # 不同数据库类型的连接池配置
 DB_POOL_CONFIGS = {
     'sqlite': {
-        "max_size": 20,
-        "min_size": 5,
-        "max_inactive_connection_lifetime": 300,
-        "connection_timeout": 60,
-        "retry_limit": 3,
-        "retry_interval": 1
+        "max_size": 50,  # 增加最大连接数
+        "min_size": 10,  # 增加最小连接数
+        "max_inactive_connection_lifetime": 180,  # 减少非活动连接的生命周期
+        "connection_timeout": 30,  # 减少连接超时时间
+        "retry_limit": 2,  # 减少重试次数
+        "retry_interval": 0.5  # 减少重试间隔
     },
     'postgres': {
         "max_size": 50,

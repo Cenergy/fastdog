@@ -9,6 +9,8 @@ from apps.users.crud import get_user_by_username_or_email, create_user, update_u
 from apps.users.models import User_Pydantic, UserCreate
 from jose import jwt, JWTError
 from utils.email import send_verification_email
+import time
+from loguru import logger
 
 router = APIRouter()
 
@@ -81,6 +83,7 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @router.post("/register", response_model=User_Pydantic)
 async def register(user: UserCreate):
+    start_time = time.time()
     """注册新用户"""
     # 检查邮箱是否已被注册
     db_user = await get_user_by_username_or_email(user.email)
@@ -104,6 +107,8 @@ async def register(user: UserCreate):
     # 异步发送验证邮件
     asyncio.create_task(send_verification_email(user.email, verification_token))
     
+    end_time = time.time()
+    logger.info(f"注册接口总耗时: {end_time - start_time:.2f}秒")
     return new_user
 
 @router.get("/verify-email/{token}")
