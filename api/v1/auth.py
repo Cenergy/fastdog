@@ -1,12 +1,14 @@
+import asyncio
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from core.config import settings
 from datetime import datetime
 from core.security import create_access_token, verify_password, get_password_hash, create_verification_token
-from apps.users.crud import get_user_by_username_or_email, create_user, update_user
+from apps.users.crud import get_user_by_username_or_email, create_user, update_user, get_user_by_verification_token
 from apps.users.models import User_Pydantic, UserCreate
 from jose import jwt, JWTError
+from utils.email import send_verification_email
 
 router = APIRouter()
 
@@ -47,12 +49,12 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # TODO: 暂时注释掉邮箱验证检查，等邮件发送功能完成后再启用
-    # if not user.email_verified:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="请先验证您的邮箱"
-    #     )
+    # 检查邮箱是否已验证
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="请先验证您的邮箱"
+        )
     
     # 重置密码重试次数
     if user.password_retry_count > 0:
@@ -81,7 +83,7 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
 async def register(user: UserCreate):
     """注册新用户"""
     # 检查邮箱是否已被注册
-    db_user = await get_user_by_email(user.email)
+    db_user = await get_user_by_username_or_email(user.email)
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -96,12 +98,15 @@ async def register(user: UserCreate):
     user_dict["email_verification_token"] = verification_token
     user_dict["email_verified"] = False
     
-    # TODO: 发送验证邮件
-    # send_verification_email(user.email, verification_token)
+    # 创建用户
+    new_user = await create_user(user_dict)
     
-    return await create_user(user_dict)
+    # 异步发送验证邮件
+    asyncio.create_task(send_verification_email(user.email, verification_token))
+    
+    return new_user
 
-@router.post("/verify-email/{token}")
+@router.get("/verify-email/{token}")
 async def verify_email(token: str):
     """验证邮箱"""
     user = await get_user_by_verification_token(token)

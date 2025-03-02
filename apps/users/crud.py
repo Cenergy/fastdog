@@ -43,6 +43,20 @@ async def get_user_by_username_or_email(username_or_email: str):
         except DoesNotExist:
             return None
 
+async def get_user_by_verification_token(token: str):
+    """通过验证令牌获取用户
+
+    Args:
+        token: 验证令牌
+
+    Returns:
+        User: 用户对象，如果未找到则返回None
+    """
+    try:
+        return await User.get(email_verification_token=token)
+    except DoesNotExist:
+        return None
+
 async def create_user(user_dict: dict):
     try:
         user_obj = await User.create(**user_dict)
@@ -53,10 +67,9 @@ async def create_user(user_dict: dict):
 async def get_users(skip: int = 0, limit: int = 100):
     return await User_Pydantic.from_queryset(User.all().offset(skip).limit(limit))
 
-async def update_user(user_id: int, user: UserCreate):
+async def update_user(user_id: int, user_data: dict):
     try:
         db_user = await User.get(id=user_id)
-        user_data = user.model_dump(exclude_unset=True)
         if "password" in user_data:
             hashed_password = get_password_hash(user_data["password"])
             del user_data["password"]
