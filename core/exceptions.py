@@ -19,3 +19,19 @@ class NotFoundError(CustomException):
 class ValidationError(CustomException):
     def __init__(self, detail: str = "数据验证失败"):
         super().__init__(detail=detail, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+class DatabaseConnectionError(CustomException):
+    def __init__(self, detail: str = "数据库连接失败"):
+        super().__init__(detail=detail, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+class DatabaseOperationError(CustomException):
+    def __init__(self, detail: str = "数据库操作失败"):
+        super().__init__(detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class DatabaseTransactionError(CustomException):
+    def __init__(self, detail: str = "数据库事务执行失败"):
+        super().__init__(detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class DatabasePoolExhaustedError(CustomException):
+    def __init__(self, detail: str = "数据库连接池已耗尽"):
+        super().__init__(detail=detail, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)

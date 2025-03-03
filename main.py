@@ -34,10 +34,16 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    from core.database_config import check_db_health, DatabaseMetrics
+    db_health = await check_db_health()
+    metrics = DatabaseMetrics().get_metrics()
     return {
-        "status": "healthy",
+        "status": "healthy" if db_health else "unhealthy",
         "version": "1.0.0",
-        "database": "connected"
+        "database": {
+            "status": "connected" if db_health else "disconnected",
+            "metrics": metrics
+        }
     }
 
 
