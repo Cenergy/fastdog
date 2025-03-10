@@ -7,6 +7,8 @@ from api.v1.api import api_router
 from core.middleware.cors import setup_cors_middleware
 from core.middleware.error_handler import setup_exception_handlers
 from core.middleware.rate_limit import RateLimitMiddleware
+from core.admin import setup_admin
+from core.static import setup_static_files
 
 # 初始化日志系统
 logger = setup_logging()
@@ -17,6 +19,12 @@ app = FastAPI(title=settings.PROJECT_NAME)
 app = setup_cors_middleware(app)
 app = setup_exception_handlers(app)
 app.add_middleware(RateLimitMiddleware)
+
+# 配置静态文件
+app = setup_static_files(app)
+
+# 设置FastAdmin后台管理
+app = setup_admin(app)
 
 @app.on_event("startup")
 async def startup_event():
