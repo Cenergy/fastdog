@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 10
     MAX_PAGE_SIZE: int = 100
 
+    # 管理员设置
+    ADMIN_USER_MODEL: str = "User"
+    ADMIN_USER_MODEL_USERNAME_FIELD: str = "username"
+    ADMIN_SECRET_KEY: str = "your_secret_key"
+
     class Config:
         case_sensitive = True
         env_file = ".env"
