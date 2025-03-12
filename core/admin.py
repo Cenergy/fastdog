@@ -5,49 +5,44 @@ from apps.users.models import User
 from core.config import settings
 from apps.users.crud import get_user_by_username_or_email
 from core.security import verify_password
+from apps.users.admin import UserModelAdmin
+from typing import Type, Dict
+import importlib
+import pkgutil
+import inspect
+import os
 
-# 创建用户管理类
-@register(User)
-class UserAdmin(TortoiseModelAdmin):
-    """用户管理类"""
-    model = User
-    icon = "user"
-    display_name = "用户管理"
-    searchable_fields = ["username", "email"]
-    exclude_fields = ["hashed_password", "email_verification_token", 
-                     "password_reset_token", "password_reset_token_expires"]
-    list_display = ["id", "username", "email", "is_active", "is_superuser", "role", "created_at"]
-    list_per_page = 15
-    ordering = ["-created_at"]
+
+def discover_admin_models() -> Dict[str, Type[TortoiseModelAdmin]]:
+    """自动发现和注册所有带有register装饰器的ModelAdmin类
     
-    async def authenticate(self, username: str, password: str) -> int | None:
-        """验证用户名和密码
-        
-        Args:
-            username: 用户名或邮箱
-            password: 密码
+    Returns:
+        Dict[str, Type[TortoiseModelAdmin]]: 注册的ModelAdmin类字典
+    """
+    registered_models = {}
+    
+    # 遍历apps目录下的所有包
+    apps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'apps')
+    for module_info in pkgutil.iter_modules([apps_dir]):
+        if not module_info.ispkg:
+            continue
             
-        Returns:
-            int | None: 认证成功返回用户ID，失败返回None
-        """
-        # 获取用户
-        user = await get_user_by_username_or_email(username)
-        if not user:
-            return None
+        # 导入app包
+        app_name = module_info.name
+        try:
+            app_module = importlib.import_module(f'apps.{app_name}')
+            admin_module = importlib.import_module(f'apps.{app_name}.admin')
+        except ImportError:
+            continue
             
-        # 验证用户是否是管理员或超级用户
-        if not user.is_superuser and user.role != "admin":
-            return None
-            
-        # 验证密码
-        if not verify_password(password, user.hashed_password):
-            return None
-            
-        # 验证邮箱是否已验证
-        if not user.email_verified:
-            return None
-            
-        return user.id
+        # 查找带有register装饰器的ModelAdmin类
+        for name, obj in inspect.getmembers(admin_module):
+            if inspect.isclass(obj) and issubclass(obj, TortoiseModelAdmin) and hasattr(obj, '_model'):
+                model_name = obj._model.__name__.lower()
+                registered_models[model_name] = obj
+    
+    return registered_models
+
 
 def setup_admin(app: FastAPI):
     """
@@ -62,11 +57,12 @@ def setup_admin(app: FastAPI):
     admin_app.theme = "blue"
     
     # 设置用户模型和用户名字段
-    import os
-    # 确保使用正确的模型路径
     os.environ["ADMIN_USER_MODEL"] = "apps.users.models.User"
     os.environ["ADMIN_USER_MODEL_USERNAME_FIELD"] = "username"
     os.environ["ADMIN_SECRET_KEY"] = settings.SECRET_KEY
+    
+    # 自动发现和注册所有ModelAdmin类
+    discover_admin_models()
     
     # 挂载FastAdmin
     app.mount("/admin", admin_app)

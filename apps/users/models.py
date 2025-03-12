@@ -3,8 +3,8 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 
 class User(models.Model):
     id = fields.IntField(pk=True)
-    username = fields.CharField(max_length=50, unique=True)
-    email = fields.CharField(max_length=255, unique=True)
+    username = fields.CharField(max_length=50, unique=True,verbose_name='用户名')
+    email = fields.CharField(max_length=255, unique=True,verbose_name='邮箱')
     hashed_password = fields.CharField(max_length=255)
     is_active = fields.BooleanField(default=True)
     is_superuser = fields.BooleanField(default=False)
@@ -17,14 +17,14 @@ class User(models.Model):
     password_reset_token = fields.CharField(max_length=255, null=True)
     password_reset_token_expires = fields.DatetimeField(null=True)
 
-    class Meta:
-        table = "users"
-
     def __str__(self):
-        return f"{self.username}"
+        return self.username
 
+    class Meta:
+        table = "user"
+
+    
 User_Pydantic = pydantic_model_creator(User, name="User", exclude=("hashed_password", "email_verification_token", "password_reset_token", "password_reset_token_expires"))
 UserIn_Pydantic = pydantic_model_creator(User, name="UserIn", exclude_readonly=True, exclude=("hashed_password", "email_verification_token", "password_reset_token", "password_reset_token_expires"))
-
 class UserCreate(UserIn_Pydantic):
     password: str

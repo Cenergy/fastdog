@@ -21,6 +21,30 @@ async def init_db():
         await Tortoise.generate_schemas(safe=True)
         logger.info("数据库 schema 生成成功")
 
+        # 创建默认管理员账户
+        from apps.users.crud import get_user_by_username_or_email, create_user
+        from core.security import get_password_hash
+
+        admin_email = "admin@example.com"
+        admin_user = await get_user_by_username_or_email(admin_email)
+        
+        if not admin_user:
+            logger.info("正在创建默认管理员账户...")
+            admin_data = {
+                "email": admin_email,
+                "username": "admin",
+                "hashed_password": get_password_hash("admin123"),
+                "is_active": True,
+                "is_superuser": True,
+                "email_verified": True,
+                "role": "admin"
+            }
+            await create_user(admin_data)
+            logger.info("默认管理员账户创建成功")
+        else:
+            logger.info("默认管理员账户已存在，跳过创建")
+
+
     except Exception as e:
         logger.error(f"数据库初始化失败: {str(e)}")
         raise Exception(f"数据库初始化失败: {str(e)}")

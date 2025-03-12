@@ -1,6 +1,6 @@
 from tortoise.exceptions import DoesNotExist, IntegrityError
 from fastapi import HTTPException
-from .models import User, User_Pydantic, UserCreate
+from .models import User, User_Pydantic
 from core.security import get_password_hash
 
 async def get_user(user_id: int):
