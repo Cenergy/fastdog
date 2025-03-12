@@ -57,9 +57,9 @@ def setup_admin(app: FastAPI):
     admin_app.theme = "blue"
     
     # 设置用户模型和用户名字段
-    os.environ["ADMIN_USER_MODEL"] = "apps.users.models.User"
-    os.environ["ADMIN_USER_MODEL_USERNAME_FIELD"] = "username"
-    os.environ["ADMIN_SECRET_KEY"] = settings.SECRET_KEY
+    # os.environ["ADMIN_USER_MODEL"] = "apps.users.models.User"
+    # os.environ["ADMIN_USER_MODEL_USERNAME_FIELD"] = "username"
+    # os.environ["ADMIN_SECRET_KEY"] = settings.SECRET_KEY
     
     # 自动发现和注册所有ModelAdmin类
     discover_admin_models()
