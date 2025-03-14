@@ -41,16 +41,28 @@ git clone https://github.com/yourusername/fastdog.git
 cd fastdog
 ```
 
-2. 创建虚拟环境
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate  # Windows
+### 本地启动
+#### 后端
+启动项目需要以下环境：
+- Python 3.11
+
+#### 方法一（推荐）：使用 uv 安装依赖
+1. 安装 uv
+```sh
+pip install uv
+```
+
+2. 创建并激活虚拟环境
+```sh
+uv venv
+source .venv/bin/activate  # Linux/Mac
+# 或
+.\.venv\Scripts\activate  # Windows
 ```
 
 3. 安装依赖
-```bash
-pip install -r requirements.txt
+```sh
+uv add pyproject.toml
 ```
 
 4. 配置环境变量

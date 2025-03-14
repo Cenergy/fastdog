@@ -1,3 +1,24 @@
+[project]
+name = "fastgo"
+version = "0.1.0"
+description = "Fast api go go go"
+requires-python = ">=3.11"
+dependencies = [
+    "aerich>=0.8.2",
+    "argon2-cffi>=23.1.0",
+    "bcrypt==4.0.1",
+    "fastadmin>=0.2.19",
+    "fastapi-mail>=1.4.2",
+    "fastapi[all]>=0.115.11",
+    "loguru>=0.7.3",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.8.1",
+    "python-jose[cryptography]>=3.4.0",
+    "tenacity>=9.0.0",
+    "tortoise-orm>=0.24.2",
+]
+
+
 [tool.aerich]
 tortoise_orm = "core.database.TORTOISE_ORM"
 location = "./migrations"

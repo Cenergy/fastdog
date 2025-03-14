@@ -15,6 +15,13 @@ logger = setup_logging()
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
+import os
+from dotenv import load_dotenv
+ 
+# 加载.env文件，默认在当前目录下查找.env文件
+load_dotenv()
+ 
+
 # 配置中间件
 app = setup_cors_middleware(app)
 app = setup_exception_handlers(app)
