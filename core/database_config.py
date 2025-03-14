@@ -7,6 +7,8 @@ from loguru import logger
 from core.config import settings
 from core.app_models import ALL_MODELS
 
+print(ALL_MODELS)
+
 # 不同数据库类型的连接池配置
 DB_POOL_CONFIGS = {
     'sqlite': {

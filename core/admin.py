@@ -6,6 +6,7 @@ from core.config import settings
 from apps.users.crud import get_user_by_username_or_email
 from core.security import verify_password
 from apps.users.admin import UserModelAdmin
+import apps.resources.admin  as resourcesAdmin
 from typing import Type, Dict
 import importlib
 import pkgutil
@@ -62,7 +63,8 @@ def setup_admin(app: FastAPI):
     # os.environ["ADMIN_SECRET_KEY"] = settings.SECRET_KEY
     
     # 自动发现和注册所有ModelAdmin类
-    discover_admin_models()
+    models=discover_admin_models()
+    print(models)
     
     # 挂载FastAdmin
     app.mount("/admin", admin_app)
