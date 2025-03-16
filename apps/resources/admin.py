@@ -40,49 +40,95 @@ class ResourceModelAdmin(TortoiseModelAdmin):
             if "image_url" in payload and payload["image_url"] is not None:
                 file = payload["image_url"]
                 if isinstance(file, UploadFile):
-                    # 确保上传目录存在
-                    upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "resources")
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    # 生成唯一文件名
-                    file_ext = os.path.splitext(file.filename)[1]
-                    unique_filename = f"{UUID(str(id)).hex if id else UUID(str(payload.get('id'))).hex}{file_ext}"
-                    file_path = os.path.join(upload_dir, unique_filename)
-                    
-                    # 读取文件内容
-                    content = await file.read()
-                    
-                    # 保存文件
-                    with open(file_path, "wb") as f:
-                        f.write(content)
-                    
-                    # 更新图片URL到payload
-                    payload["image_url"] = f"/static/uploads/resources/{unique_filename}"
+                    try:
+                        # 确保上传目录存在
+                        upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "resources")
+                        os.makedirs(upload_dir, exist_ok=True)
+                        
+                        # 获取文件扩展名并转换为小写
+                        file_ext = os.path.splitext(file.filename)[1].lower()
+                        if file_ext not in [".jpg", ".jpeg", ".png", ".gif"]:
+                            raise ValueError(f"不支持的图片格式: {file_ext}")
+                        
+                        # 生成唯一文件名
+                        unique_filename = f"{UUID(str(id)).hex if id else UUID(str(payload.get('id'))).hex}{file_ext}"
+                        file_path = os.path.join(upload_dir, unique_filename)
+                        
+                        # 读取文件内容
+                        content = await file.read()
+                        
+                        # 保存文件
+                        with open(file_path, "wb") as f:
+                            f.write(content)
+                            f.flush()
+                            os.fsync(f.fileno())
+                        
+                        # 更新图片URL到payload
+                        payload["image_url"] = f"/static/uploads/resources/{unique_filename}"
+                    except Exception as e:
+                        print(f"保存上传文件时出错: {str(e)}")
+                        raise e
                 elif isinstance(file, str) and is_valid_base64(file):
                     # 处理base64编码的图片
                     import base64
+                    import re
                     from uuid import uuid4
                     
                     # 确保上传目录存在
                     upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "resources")
                     os.makedirs(upload_dir, exist_ok=True)
                     
-                    # 生成唯一文件名
-                    unique_filename = f"{uuid4().hex}.png"
-                    file_path = os.path.join(upload_dir, unique_filename)
+                    # 解析base64数据和文件类型
+                    base64_pattern = r'^data:image/(\w+);base64,(.+)$'
+                    match = re.match(base64_pattern, file)
                     
-                    # 解码base64并保存文件
-                    # 移除data:image/png;base64前缀
-                    if ';base64,' in file:
-                        file = file.split(';base64,')[1]
-                    image_data = base64.b64decode(file)
-                    with open(file_path, "wb") as f:
-                        f.write(image_data)
+                    if match:
+                        file_type = match.group(1)
+                        base64_data = match.group(2)
+                        
+                        # 检查文件类型
+                        if file_type not in ['jpeg', 'jpg', 'png', 'gif']:
+                            raise ValueError(f"不支持的图片格式: {file_type}")
+                            
+                        # 生成唯一文件名
+                        unique_filename = f"{uuid4().hex}.{file_type}"
+                        file_path = os.path.join(upload_dir, unique_filename)
+                        
+                        try:
+                            # 解码base64并保存文件
+                            image_data = base64.b64decode(base64_data)
+                            with open(file_path, "wb") as f:
+                                f.write(image_data)
+                                f.flush()
+                                os.fsync(f.fileno())
+                        except Exception as e:
+                            print(f"保存base64图片时出错: {str(e)}")
+                            raise ValueError("无效的base64图片数据")
+                    else:
+                        raise ValueError("无效的base64图片格式")
                     
                     # 更新图片URL到payload
                     payload["image_url"] = f"/static/uploads/resources/{unique_filename}"
             
-            return await super().save_model(id, payload)
+            # 确保image_url字段被正确设置
+            if "image_url" in payload and payload["image_url"] and payload["image_url"].startswith("/static/"):
+                print(f"Image URL before save: {payload['image_url']}")
+                
+            # 保存资源
+            result = await super().save_model(id, payload)
+            
+            # 验证保存结果
+            if result:
+                saved_resource = await self.model.get(id=result["id"])
+                print(f"Saved resource image_url: {saved_resource.image_url}")
+                
+                # 如果image_url没有正确保存，尝试直接更新
+                if "image_url" in payload and payload["image_url"] and saved_resource.image_url != payload["image_url"]:
+                    saved_resource.image_url = payload["image_url"]
+                    await saved_resource.save()
+                    print(f"Updated resource image_url: {saved_resource.image_url}")
+            
+            return result
         except Exception as e:
             print(f"Error saving resource: {str(e)}")
             raise e
