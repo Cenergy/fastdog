@@ -28,7 +28,7 @@ class ResourceModelAdmin(TortoiseModelAdmin):
         "description": CharField(max_length=1024, description="资源描述", required=False),
         "type": CharField(max_length=50, description="资源类型"),
         "url": CharField(max_length=1024, description="资源链接", required=False),
-        "image_url": CharField(max_length=1024, description="资源图片链接", required=False)
+        "image_url": CharField(max_length=5 * 1024 * 1024, description="资源图片链接", required=False)
     }
     formfield_overrides = {  # noqa: RUF012
         "image_url": (WidgetType.Upload, {"required": True, "upload_action_name": "upload"})  

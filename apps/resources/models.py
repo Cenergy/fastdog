@@ -14,7 +14,7 @@ class Resource(models.Model):
     description = fields.TextField(description="资源描述", null=True)
     type = fields.CharEnumField(ResourceType, description="资源类型", default=ResourceType.OTHER)
     url = fields.CharField(max_length=1024, description="资源链接")
-    image_url = fields.CharField(max_length=1024, description="资源图片链接", null=True)
+    image_url = fields.CharField(max_length=5 * 1024 * 1024, description="资源图片链接", null=True)
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
     is_active = fields.BooleanField(default=True, description="是否可用")
