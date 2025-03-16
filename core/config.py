@@ -1,9 +1,11 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
+import os
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "FastAPI Admin"
     API_V1_STR: str = "/api/v1"
+    STATIC_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     SECRET_KEY: str = "YOUR_SECRET_KEY_HERE"  # 在生产环境中应该使用环境变量
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days

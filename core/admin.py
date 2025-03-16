@@ -6,7 +6,8 @@ from core.config import settings
 from apps.users.crud import get_user_by_username_or_email
 from core.security import verify_password
 from apps.users.admin import UserModelAdmin
-import apps.resources.admin  as resourcesAdmin
+import apps.test.admin  as TestAdmin
+import apps.resources.admin as resourcesAdmin
 from typing import Type, Dict
 import importlib
 import pkgutil
