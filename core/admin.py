@@ -8,6 +8,7 @@ from core.security import verify_password
 from apps.users.admin import UserModelAdmin
 import apps.test.admin  as TestAdmin
 import apps.resources.admin as resourcesAdmin
+import apps.tasks.admin as tasksAdmin
 from typing import Type, Dict
 import importlib
 import pkgutil

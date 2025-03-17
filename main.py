@@ -36,10 +36,16 @@ app = setup_admin(app)
 @app.on_event("startup")
 async def startup_event():
     await init_db()
+    # 启动任务调度器
+    from apps.tasks.scheduler import scheduler
+    await scheduler.start()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await close_db()
+    # 关闭任务调度器
+    from apps.tasks.scheduler import scheduler
+    await scheduler.shutdown()
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

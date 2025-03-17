@@ -5,6 +5,7 @@ description = "Fast api go go go"
 requires-python = ">=3.11"
 dependencies = [
     "aerich>=0.8.2",
+    "apscheduler>=3.11.0",
     "argon2-cffi>=23.1.0",
     "bcrypt==4.0.1",
     "fastadmin>=0.2.19",
@@ -23,3 +24,7 @@ dependencies = [
 tortoise_orm = "core.database.TORTOISE_ORM"
 location = "./migrations"
 src_folder = "./."
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
