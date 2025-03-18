@@ -101,8 +101,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                                 os.fsync(f.fileno())
                                 
                             # 更新图片URL到payload
-                            payload["original_url"] = f"/static/uploads/photos/{unique_filename}"
-                            payload["original_filename"] = f"base64_image.{file_type}"
+                            payload["cover_image"] = f"/static/uploads/albums/{unique_filename}"
                             
                             # 设置文件格式
                             try:
@@ -128,10 +127,9 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                                 thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
                                 
                                 # 保存缩略图
-                                thumbnail_filename = f"{unique_id}_thumbnail.jpg"
-                                thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+                                thumbnail_filename = f"{unique_filename}_thumbnail.jpg"
+                                thumbnail_path = os.path.join(upload_dir, thumbnail_filename)
                                 thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
-                                payload["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
                                 
                                 # 生成预览图 (1000px宽)
                                 if width > 1000:
@@ -140,12 +138,15 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                                     preview.thumbnail(preview_size, Image.LANCZOS)
                                     
                                     # 保存预览图
-                                    preview_filename = f"{unique_id}_preview.jpg"
-                                    preview_path = os.path.join(previews_dir, preview_filename)
+                                    preview_filename = f"{unique_filename}_preview.jpg"
+                                    preview_path = os.path.join(upload_dir, preview_filename)
                                     preview.convert("RGB").save(preview_path, "JPEG", quality=90)
-                                    payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
+                                    
                                 else:
                                     # 如果原图小于预览图尺寸，则使用原图作为预览图
+                                    preview_filename = unique_filename
+                                    payload["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
+                                    payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
                                     payload["preview_url"] = payload["original_url"]
                                     
                             except Exception as e:
@@ -186,7 +187,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
         "location": CharField(max_length=255, description="拍摄地点", required=False)
     }
     formfield_overrides = {
-        "original_url": (WidgetType.Upload, {"required": True, "upload_action_name": "upload"})
+        "original_url": (WidgetType.Upload, {"required": True, "upload_action_name": "upload", "multiple": True})
     }
     
     @display
@@ -209,189 +210,161 @@ class PhotoModelAdmin(TortoiseModelAdmin):
         # 处理上传的图片文件
         try:
             if "original_url" in payload and payload["original_url"] is not None:
-                file = payload["original_url"]
-                if isinstance(file, UploadFile):
-                    # 确保上传目录存在
-                    upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
-                    thumbnails_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "thumbnails")
-                    previews_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "previews")
-                    
-                    os.makedirs(upload_dir, exist_ok=True)
-                    os.makedirs(thumbnails_dir, exist_ok=True)
-                    os.makedirs(previews_dir, exist_ok=True)
-                    
-                    # 获取文件扩展名并转换为小写
-                    original_filename = file.filename
-                    file_ext = os.path.splitext(original_filename)[1].lower()
-                    
-                    # 检查文件格式
-                    supported_formats = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"]
-                    if file_ext not in supported_formats:
-                        raise ValueError(f"不支持的图片格式: {file_ext}")
-                    
-                    # 设置文件格式
-                    file_format = file_ext[1:].upper()  # 去掉点号并转为大写
-                    if file_format == "JPEG":
-                        file_format = "JPG"
-                    
-                    # 生成唯一文件名
-                    unique_id = uuid4().hex
-                    unique_filename = f"{unique_id}{file_ext}"
-                    file_path = os.path.join(upload_dir, unique_filename)
-                    
-                    # 读取文件内容
-                    content = await file.read()
-                    
-                    # 保存原始文件
-                    with open(file_path, "wb") as f:
-                        f.write(content)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    
-                    # 更新图片URL到payload
-                    payload["original_url"] = f"/static/uploads/photos/{unique_filename}"
-                    payload["original_filename"] = original_filename
-                    
-                    # 设置文件格式
-                    try:
-                        format_enum = PhotoFormat(file_ext[1:].lower())
-                        payload["file_format"] = format_enum
-                    except ValueError:
-                        payload["file_format"] = PhotoFormat.OTHER
-                    
-                    # 获取图片信息并生成缩略图和预览图
-                    try:
-                        # 打开图片
-                        image = Image.open(io.BytesIO(content))
-                        
-                        # 获取图片尺寸
-                        width, height = image.size
-                        payload["width"] = width
-                        payload["height"] = height
-                        payload["file_size"] = len(content)
-                        
-                        # 生成缩略图 (200px宽)
-                        thumbnail_size = (200, int(200 * height / width))
-                        thumbnail = image.copy()
-                        thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
-                        
-                        # 保存缩略图
-                        thumbnail_filename = f"{unique_id}_thumbnail.jpg"
-                        thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
-                        thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
-                        payload["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
-                        
-                        # 生成预览图 (1000px宽)
-                        if width > 1000:
-                            preview_size = (1000, int(1000 * height / width))
-                            preview = image.copy()
-                            preview.thumbnail(preview_size, Image.LANCZOS)
-                            
-                            # 保存预览图
-                            preview_filename = f"{unique_id}_preview.jpg"
-                            preview_path = os.path.join(previews_dir, preview_filename)
-                            preview.convert("RGB").save(preview_path, "JPEG", quality=90)
-                            payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
-                        else:
-                            # 如果原图小于预览图尺寸，则使用原图作为预览图
-                            payload["preview_url"] = payload["original_url"]
-                            
-                    except UnidentifiedImageError:
-                        print(f"无法识别图片格式: {original_filename}")
-                    except Exception as e:
-                        print(f"处理图片时出错: {str(e)}")
+                files = payload["original_url"]
+                if not isinstance(files, list):
+                    files = [files]
                 
-                elif isinstance(file, str) and is_valid_base64(file):
-                    # 处理base64编码的图片
-                    # 确保上传目录存在
-                    upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
-                    thumbnails_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "thumbnails")
-                    previews_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "previews")
-                    
-                    os.makedirs(upload_dir, exist_ok=True)
-                    os.makedirs(thumbnails_dir, exist_ok=True)
-                    os.makedirs(previews_dir, exist_ok=True)
-                    
-                    # 解析base64数据和文件类型
-                    base64_pattern = r'^data:image/(\w+);base64,(.+)$'
-                    match = re.match(base64_pattern, file)
-                    
-                    if match:
-                        file_type = match.group(1)
-                        base64_data = match.group(2)
+                processed_files = []
+                for file in files:
+                    if isinstance(file, UploadFile):
+                        # 确保上传目录存在
+                        upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                        thumbnails_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "thumbnails")
+                        previews_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos", "previews")
                         
-                        # 检查文件类型
-                        if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
-                            raise ValueError(f"不支持的图片格式: {file_type}")
+                        os.makedirs(upload_dir, exist_ok=True)
+                        os.makedirs(thumbnails_dir, exist_ok=True)
+                        os.makedirs(previews_dir, exist_ok=True)
                         
-                        # 生成唯一文件名和ID
+                        # 获取文件扩展名并转换为小写
+                        original_filename = file.filename
+                        file_ext = os.path.splitext(original_filename)[1].lower()
+                        
+                        # 检查文件格式
+                        supported_formats = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"]
+                        if file_ext not in supported_formats:
+                            raise ValueError(f"不支持的图片格式: {file_ext}")
+                        
+                        # 设置文件格式
+                        file_format = file_ext[1:].upper()  # 去掉点号并转为大写
+                        if file_format == "JPEG":
+                            file_format = "JPG"
+                        
+                        # 生成唯一文件名
                         unique_id = uuid4().hex
-                        unique_filename = f"{unique_id}.{file_type}"
+                        unique_filename = f"{unique_id}{file_ext}"
                         file_path = os.path.join(upload_dir, unique_filename)
                         
+                        # 读取文件内容
+                        content = await file.read()
+                        
+                        # 保存文件
+                        with open(file_path, "wb") as f:
+                            f.write(content)
+                            f.flush()
+                            os.fsync(f.fileno())
+                        
+                        # 更新图片URL到payload
+                        file_payload = {
+                            "original_url": f"/static/uploads/photos/{unique_filename}",
+                            "original_filename": original_filename,
+                            "album": payload.get("album"),
+                            "title": payload.get("title") or "未命名照片",
+                            "description": payload.get("description"),
+                            "is_active": payload.get("is_active", True),
+                            "sort_order": payload.get("sort_order", 0)
+                        }
+                        
+                        # 设置文件格式
                         try:
-                            # 解码base64并保存文件
-                            image_data = base64.b64decode(base64_data)
-                            with open(file_path, "wb") as f:
-                                f.write(image_data)
-                                f.flush()
-                                os.fsync(f.fileno())
-                                
-                            # 更新图片URL到payload
-                            payload["original_url"] = f"/static/uploads/photos/{unique_filename}"
-                            payload["original_filename"] = f"base64_image.{file_type}"
+                            format_enum = PhotoFormat(file_ext[1:].lower())
+                            file_payload["file_format"] = format_enum
+                        except ValueError as e:
+                            print(f"设置文件格式时出错: {str(e)}")
+                            file_payload["file_format"] = PhotoFormat.OTHER
+                        
+                        
+                        # 获取图片信息并生成缩略图和预览图
+                        try:
+                            # 打开图片
+                            image = Image.open(io.BytesIO(content))
+                            # 获取图片尺寸
+                            width, height = image.size
+                            file_payload["width"] = width
+                            file_payload["height"] = height
+                            file_payload["file_size"] = len(content)
                             
-                            # 设置文件格式
+                            # 提取EXIF数据
                             try:
-                                format_enum = PhotoFormat(file_type.lower())
-                                payload["file_format"] = format_enum
-                            except ValueError:
-                                payload["file_format"] = PhotoFormat.OTHER
-                            
-                            # 获取图片信息并生成缩略图和预览图
-                            try:
-                                # 打开图片
-                                image = Image.open(io.BytesIO(image_data))
-                                
-                                # 获取图片尺寸
-                                width, height = image.size
-                                payload["width"] = width
-                                payload["height"] = height
-                                payload["file_size"] = len(image_data)
-                                
-                                # 生成缩略图 (200px宽)
-                                thumbnail_size = (200, int(200 * height / width))
-                                thumbnail = image.copy()
-                                thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
-                                
-                                # 保存缩略图
-                                thumbnail_filename = f"{unique_id}_thumbnail.jpg"
-                                thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
-                                thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
-                                payload["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
-                                
-                                # 生成预览图 (1000px宽)
-                                if width > 1000:
-                                    preview_size = (1000, int(1000 * height / width))
-                                    preview = image.copy()
-                                    preview.thumbnail(preview_size, Image.LANCZOS)
-                                    
-                                    # 保存预览图
-                                    preview_filename = f"{unique_id}_preview.jpg"
-                                    preview_path = os.path.join(previews_dir, preview_filename)
-                                    preview.convert("RGB").save(preview_path, "JPEG", quality=90)
-                                    payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
-                                else:
-                                    # 如果原图小于预览图尺寸，则使用原图作为预览图
-                                    payload["preview_url"] = payload["original_url"]
-                                    
+                                exif = image._getexif()
+                                if exif:
+                                    file_payload["exif_data"] = {str(k): str(v) for k, v in exif.items()}
+                                    # 提取拍摄时间
+                                    if 36867 in exif:  # DateTimeOriginal
+                                        from datetime import datetime
+                                        taken_at = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
+                                        file_payload["taken_at"] = taken_at
                             except Exception as e:
-                                print(f"处理base64图片时出错: {str(e)}")
+                                print(f"提取EXIF数据时出错: {str(e)}")
+                            
+                            # 生成缩略图 (200px宽)
+                            thumbnail_size = (200, int(200 * height / width))
+                            thumbnail = image.copy()
+                            thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
+                            
+                            # 保存缩略图
+                            thumbnail_filename = f"{unique_id}_thumbnail.jpg"
+                            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+                            thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
+                            file_payload["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
+                            
+                            # 生成预览图 (1000px宽)
+                            if width > 1000:
+                                preview_size = (1000, int(1000 * height / width))
+                                preview = image.copy()
+                                preview.thumbnail(preview_size, Image.LANCZOS)
+                                
+                                # 保存预览图
+                                preview_filename = f"{unique_id}_preview.jpg"
+                                preview_path = os.path.join(previews_dir, preview_filename)
+                                preview.convert("RGB").save(preview_path, "JPEG", quality=90)
+                                file_payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
+                            else:
+                                # 如果原图小于预览图尺寸，则使用原图作为预览图
+                                file_payload["preview_url"] = file_payload["original_url"]
+                        except UnidentifiedImageError:
+                            print(f"无法识别图片格式: {original_filename}")
+                            continue
                         except Exception as e:
-                            print(f"解码base64图片时出错: {str(e)}")
-                            raise ValueError("无效的base64图片数据")
-                    else:
-                        raise ValueError("无效的base64图片格式")
+                            print(f"处理图片时出错: {str(e)}")
+                            continue
+                        
+                        processed_files.append(file_payload)
+                
+                # 如果是多文件上传，创建多个照片记录
+                if len(processed_files) > 1:
+                    results = []
+                    for file_payload in processed_files:
+                        try:
+                            # 确保必需字段存在
+                            if not file_payload.get("original_url"):
+                                raise ValueError("缺少必需字段：original_url")
+                            if not file_payload.get("album"):
+                                raise ValueError("缺少必需字段：album")
+                            
+                            result = await super().save_model(None, file_payload)
+                            if result:
+                                results.append(result)
+                        except Exception as e:
+                            print(f"保存照片记录时出错: {str(e)}")
+                    return results[0] if results else None
+                elif len(processed_files) == 1:
+                    # 单文件上传，更新原始payload
+                    file_payload = processed_files[0]
+                    # 确保必需字段存在
+                    if not file_payload.get("original_url"):
+                        raise ValueError("缺少必需字段：original_url")
+                    if not file_payload.get("album"):
+                        raise ValueError("缺少必需字段：album")
+                    
+                    # 更新payload前确保original_url字段存在
+                    if "original_url" not in payload:
+                        payload["original_url"] = file_payload["original_url"]
+                    payload.update(file_payload)
+            
+            # 在保存前确保original_url字段有值
+            if not payload.get("original_url"):
+                raise ValueError("original_url字段不能为空")
             
             # 保存照片
             result = await super().save_model(id, payload)
