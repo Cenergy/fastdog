@@ -44,7 +44,7 @@ class Photo(models.Model):
     height = fields.IntField(description="图片高度", null=True)
     
     # 图片路径
-    original_url = fields.CharField(max_length=1024, description="原始图片URL")
+    original_url = fields.CharField(max_length=1024, description="原始图片URL", null=True)
     thumbnail_url = fields.CharField(max_length=1024, description="缩略图URL", null=True)
     preview_url = fields.CharField(max_length=1024, description="预览图URL", null=True)
     
