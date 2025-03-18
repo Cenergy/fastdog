@@ -9,6 +9,7 @@ from apps.users.admin import UserModelAdmin
 import apps.test.admin  as TestAdmin
 import apps.resources.admin as resourcesAdmin
 import apps.tasks.admin as tasksAdmin
+import apps.albums.admin as albumsAdmin
 from typing import Type, Dict
 import importlib
 import pkgutil
@@ -66,7 +67,6 @@ def setup_admin(app: FastAPI):
     
     # 自动发现和注册所有ModelAdmin类
     models=discover_admin_models()
-    print(models)
     
     # 挂载FastAdmin
     app.mount("/admin", admin_app)
