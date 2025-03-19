@@ -32,7 +32,7 @@ def setup_logging():
     logger.configure(
         handlers=[
             {"sink": sys.stdout, "format": log_format},
-            {"sink": str(logs_dir / "app.log"), "rotation": "500 MB", "format": log_format},
+            {"sink": str(logs_dir / "app.log"), "rotation": "1 day", "retention": "10 days", "compression": "zip", "format": log_format, "enqueue": True, "buffering": 4096},
         ],
         levels=[{"name": "DEBUG", "color": "<blue>"}],
     )
