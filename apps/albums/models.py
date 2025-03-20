@@ -44,14 +44,14 @@ class Photo(models.Model):
     height = fields.IntField(description="图片高度", null=True)
     
     # 图片路径
-    original_url = fields.CharField(max_length=1024, description="原始图片URL", null=True)
+    original_url = fields.CharField(max_length=1024, description="原始图片URL", null=False, default="/static/default.png")
     thumbnail_url = fields.CharField(max_length=1024, description="缩略图URL", null=True)
     preview_url = fields.CharField(max_length=1024, description="预览图URL", null=True)
     
     # 元数据
     taken_at = fields.DatetimeField(description="拍摄时间", null=True)
     location = fields.CharField(max_length=255, description="拍摄地点", null=True)
-    exif_data = fields.JSONField(description="EXIF数据", null=True)
+    exif_data = fields.JSONField(description="EXIF数据", null=True, default={})
     
     # 状态字段
     is_active = fields.BooleanField(default=True, description="是否可用")
