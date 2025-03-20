@@ -443,8 +443,8 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                         except Exception as e:
                             print(f"处理图片时出错: {str(e)}")
                             raise ValueError(f"处理图片时出错: {str(e)}")
-                    elif isinstance(file, str) and file.startswith('/static/uploads/'):
-                        # 如果是已有图片的URL，确保保留并验证它
+                    elif isinstance(file, str) and (file.startswith('/static/uploads/') or file == '/static/default.png'):
+                        # 如果是已有图片的URL或默认图片，确保保留并验证它
                         file_payload = {
                             "original_url": file,
                             "album": payload.get("album"),

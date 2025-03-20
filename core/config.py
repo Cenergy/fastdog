@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     ADMIN_USER_MODEL: str = "User"
     ADMIN_USER_MODEL_USERNAME_FIELD: str = "username"
     ADMIN_SECRET_KEY: str = "your_secret_key"
+    ADMIN_DISABLE_CROP_IMAGE: bool = False
 
     class Config:
         case_sensitive = True
