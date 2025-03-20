@@ -1,5 +1,5 @@
 from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
-from tortoise.fields import CharField, TextField
+from tortoise.fields import CharField, TextField,JSONField
 from .models import Album, Photo, PhotoFormat
 from fastapi import UploadFile
 from uuid import UUID, uuid4
@@ -182,7 +182,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
         "title": CharField(max_length=255, description="照片标题", required=False),
         "description": TextField(description="照片描述", required=False),
         "album": CharField(max_length=255, description="所属相册", required=True),
-        "original_url": CharField(max_length=1024, description="原始图片", required=True, default="/static/default.png"),
+        "original_url": JSONField(description="原始图片", required=True, default=["/static/default.png"]),
         "is_active": WidgetType.Checkbox,
         "sort_order": WidgetType.InputNumber,
         "location": CharField(max_length=255, description="拍摄地点", required=False)
