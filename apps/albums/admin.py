@@ -333,16 +333,35 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             raise ValueError(f"处理封面图片失败: {str(e)}")
 
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
-            try:
-                if "cover_image" in payload and payload["cover_image"] is not None:
-                    file = payload["cover_image"]
-                    payload["cover_image"] = await self.process_cover_image(file)
+        try:
+            if "cover_image" in payload and payload["cover_image"] is not None:
+                file = payload["cover_image"]
+                # 处理封面图片并确保正确赋值给payload
+                image_url = await self.process_cover_image(file)
+                payload["cover_image"] = image_url
+                print(f"处理后的封面图片URL: {image_url}")
+            
+            # 确保cover_image字段被正确设置
+            if "cover_image" in payload and payload["cover_image"] and isinstance(payload["cover_image"], str):
+                print(f"保存前的cover_image: {payload['cover_image']}")
+            
+            result = await super().save_model(id, payload)
+            
+            # 验证保存结果
+            if result and "id" in result:
+                saved_album = await self.model.get(id=result["id"])
+                print(f"保存后的album.cover_image: {saved_album.cover_image}")
                 
-                result = await super().save_model(id, payload)
-                return result
-            except Exception as e:
-                print(f"保存相册时出错: {str(e)}")
-                raise e
+                # 如果cover_image没有正确保存，尝试直接更新
+                if "cover_image" in payload and payload["cover_image"] and saved_album.cover_image != payload["cover_image"]:
+                    saved_album.cover_image = payload["cover_image"]
+                    await saved_album.save()
+                    print(f"更新后的album.cover_image: {saved_album.cover_image}")
+            
+            return result
+        except Exception as e:
+            print(f"保存相册时出错: {str(e)}")
+            raise e
 
 
 @register(Photo)
