@@ -387,7 +387,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
         "title": CharField(max_length=255, description="照片标题", required=False),
         "description": TextField(description="照片描述", required=False),
         "album": CharField(max_length=255, description="所属相册", required=True),
-        "original_url": JSONField(description="原始图片", required=True, default=["/static/default.png"]),
+        "original_url": JSONField(description="原始图片", required=True, default=[]),
         "is_active": WidgetType.Checkbox,
         "sort_order": WidgetType.InputNumber,
         "location": CharField(max_length=255, description="拍摄地点", required=False)
