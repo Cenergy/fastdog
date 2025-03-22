@@ -26,7 +26,9 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     Returns:
         包含图片处理结果的字典，包括缩略图和预览图URL
     """
+    # 初始化结果字典，设置原始图片URL
     result = {}
+    # 注意：这里不设置original_url，应该由调用方提供
     
     # 生成缩略图 (200px宽)
     thumbnail_size = (200, int(200 * height / width))
@@ -52,6 +54,10 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
         result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
+        # 确保original_url已经被设置
+        if "original_url" not in result:
+            # 如果没有设置original_url，使用一个默认值
+            result["original_url"] = f"/static/uploads/albums/{unique_id}"
         result["preview_url"] = result["original_url"]
     
     return result
@@ -131,7 +137,7 @@ def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes]:
     file_type = match.group(1)
     base64_data = match.group(2)
     
-    if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
+    if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic']:
         raise ValueError(f"不支持的图片格式: {file_type}")
     
     unique_filename = f"{uuid4().hex}.{file_type}"
@@ -243,6 +249,35 @@ class AlbumModelAdmin(TortoiseModelAdmin):
         """
         return await Photo.filter(album_id=obj.id).count()
     
+    def is_valid_base64(self, base64_str: str) -> bool:
+        """验证字符串是否为有效的base64图片格式
+        
+        Args:
+            base64_str: 待验证的base64字符串
+            
+        Returns:
+            是否为有效的base64图片格式
+        """
+        if not isinstance(base64_str, str):
+            return False
+            
+        base64_pattern = r'^data:image/(\w+);base64,(.+)$'
+        match = re.match(base64_pattern, base64_str)
+        
+        if not match:
+            return False
+            
+        file_type = match.group(1).lower()
+        if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic']:
+            return False
+            
+        try:
+            base64_data = match.group(2)
+            base64.b64decode(base64_data)
+            return True
+        except Exception:
+            return False
+
     async def process_cover_image(self, file: UploadFile | str) -> str:
         """处理封面图片
         
@@ -258,17 +293,20 @@ class AlbumModelAdmin(TortoiseModelAdmin):
         upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "albums")
         os.makedirs(upload_dir, exist_ok=True)
         
-        if isinstance(file, UploadFile):
-            # 处理上传的文件
-            file_ext, unique_filename = process_upload_file(file)
-            file_path = os.path.join(upload_dir, unique_filename)
-            content = await file.read()
-            save_image_file(file_path, content)
-            return f"/static/uploads/albums/{unique_filename}"
-            
-        elif isinstance(file, str) and is_valid_base64(file):
-            # 处理base64编码的图片
-            try:
+        try:
+            if isinstance(file, UploadFile):
+                # 处理上传的文件
+                file_ext, unique_filename = process_upload_file(file)
+                file_path = os.path.join(upload_dir, unique_filename)
+                content = await file.read()
+                save_image_file(file_path, content)
+                return f"/static/uploads/albums/{unique_filename}"
+                
+            elif isinstance(file, str):
+                if not self.is_valid_base64(file):
+                    raise ValueError("无效的base64图片格式或不支持的图片类型")
+                    
+                # 处理base64编码的图片
                 unique_filename, image_data = process_base64_image(file, upload_dir)
                 file_path = os.path.join(upload_dir, unique_filename)
                 save_image_file(file_path, image_data)
@@ -277,41 +315,34 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 image = Image.open(io.BytesIO(image_data))
                 dimensions = get_image_dimensions(image)
                 
+                # 设置原始图片URL
+                original_url = f"/static/uploads/albums/{unique_filename}"
+                
                 # 生成缩略图和预览图
                 result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"])
-                return f"/static/uploads/albums/{unique_filename}"
+                # 确保result中包含original_url
+                result["original_url"] = original_url
+                return original_url
+            else:
+                raise ValueError("不支持的文件格式，仅支持文件上传或base64图片")
                 
-            except Exception as e:
-                print(f"处理base64图片时出错: {str(e)}")
-                raise ValueError("处理base64图片失败")
-        else:
-            raise ValueError("不支持的文件格式")
-    
-    async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
-        """保存相册模型
-        
-        处理相册数据的保存，包括封面图片的处理
-        
-        Args:
-            id: 相册ID，新建时为None
-            payload: 相册数据
-            
-        Returns:
-            保存后的相册数据
-            
-        Raises:
-            Exception: 当保存失败时
-        """
-        try:
-            if "cover_image" in payload and payload["cover_image"] is not None:
-                file = payload["cover_image"]
-                payload["cover_image"] = await self.process_cover_image(file)
-            
-            result = await super().save_model(id, payload)
-            return result
         except Exception as e:
-            print(f"保存相册时出错: {str(e)}")
-            raise e
+            print(f"处理封面图片时出错: {str(e)}")
+            if isinstance(e, ValueError):
+                raise e
+            raise ValueError(f"处理封面图片失败: {str(e)}")
+
+    async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
+            try:
+                if "cover_image" in payload and payload["cover_image"] is not None:
+                    file = payload["cover_image"]
+                    payload["cover_image"] = await self.process_cover_image(file)
+                
+                result = await super().save_model(id, payload)
+                return result
+            except Exception as e:
+                print(f"保存相册时出错: {str(e)}")
+                raise e
 
 
 @register(Photo)
@@ -402,7 +433,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                 for file in files:
                     if isinstance(file, str) and file.startswith('data:image/'):
                         # 处理base64编码的图片
-                        base64_pattern = r'^data:image/([a-zA-Z]+);base64,(.+)$'
+                        base64_pattern = r'^data:image/(\w+);base64,(.+)$'
                         match = re.match(base64_pattern, file)
                         
                         if not match:
@@ -666,6 +697,9 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                         file_payload["exif_data"] = {}
                     
                     # 更新payload前确保original_url字段存在
+                    # 确保original_url是列表类型，因为模型中定义为JSONField
+                    if "original_url" in file_payload and isinstance(file_payload["original_url"], str):
+                        file_payload["original_url"] = [file_payload["original_url"]]
                     payload.update(file_payload)
             elif isinstance(payload.get("original_url"), str) and payload["original_url"].startswith('/static/uploads/'):
                 # 如果是已有图片的URL，确保不为空
