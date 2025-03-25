@@ -85,21 +85,55 @@ async def batch_convert_coordinate(
         CoordinateConversionResponse: 坐标转换响应
     """
     try:
-        # 批量转换坐标
-        result = []
-        for coord in request.coordinates:
-            lng, lat = convert_coordinates(
-                coord["lng"], 
-                coord["lat"], 
-                request.from_sys, 
-                request.to_sys
-            )
-            result.append({
-                "original_lng": coord["lng"],
-                "original_lat": coord["lat"],
-                "converted_lng": lng,
-                "converted_lat": lat
-            })
+        # 定义坐标转换处理函数
+        def process_coordinate(coord):
+            try:
+                lng, lat = convert_coordinates(
+                    coord["lng"], 
+                    coord["lat"], 
+                    request.from_sys, 
+                    request.to_sys
+                )
+                return {
+                    "original_lng": coord["lng"],
+                    "original_lat": coord["lat"],
+                    "converted_lng": lng,
+                    "converted_lat": lat
+                }
+            except Exception:
+                # 如果转换失败，返回原始坐标
+                return {
+                    "original_lng": coord["lng"],
+                    "original_lat": coord["lat"],
+                    "converted_lng": None,
+                    "converted_lat": None
+                }
+        
+        # 判断是否需要启用线程池
+        from core.config import settings
+        coord_count = len(request.coordinates)
+        if coord_count > settings.CONVERTERS_THREAD_POOL_THRESHOLD:
+            # 使用线程池并行处理
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=settings.CONVERTERS_THREAD_POOL_WORKERS) as executor:
+                # 提交所有任务到线程池并获取结果
+                result = list(executor.map(process_coordinate, request.coordinates))
+        else:
+            # 数据量较小，顺序处理
+            result = []
+            for coord in request.coordinates:
+                lng, lat = convert_coordinates(
+                    coord["lng"], 
+                    coord["lat"], 
+                    request.from_sys, 
+                    request.to_sys
+                )
+                result.append({
+                    "original_lng": coord["lng"],
+                    "original_lat": coord["lat"],
+                    "converted_lng": lng,
+                    "converted_lat": lat
+                })
         
         # 返回转换结果
         return CoordinateConversionResponse(

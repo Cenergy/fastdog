@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
     ALLOWED_UPLOAD_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx"]
     CONVERTERS_HANDLE_MAX_EXCEL_SIZE: int = 5 * 1024 * 1024  # 5MB
+    
+    # 坐标转换线程池设置
+    CONVERTERS_THREAD_POOL_THRESHOLD: int = 1000  # 启用线程池的数据行数阈值
+    CONVERTERS_THREAD_POOL_WORKERS: int = 4  # 线程池工作线程数
 
     # API设置
     RATE_LIMIT_PER_MINUTE: int = 60
