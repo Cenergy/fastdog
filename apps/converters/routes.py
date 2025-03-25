@@ -249,6 +249,17 @@ async def upload_coordinate_excel(
             status_code=400,
             content={"error": "仅支持 Excel 文件 (.xlsx/.xls)"}
         )
+    
+    # 检查文件大小
+    content = await file.read()
+    if len(content) > settings.CONVERTERS_HANDLE_MAX_EXCEL_SIZE:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"文件大小超过限制，最大允许{settings.CONVERTERS_HANDLE_MAX_EXCEL_SIZE / (1024 * 1024):.0f}MB"}
+        )
+    
+    # 重置文件指针，以便后续读取
+    file.file.seek(0)
 
     try:
         # 读取 Excel 数据
@@ -263,6 +274,19 @@ async def upload_coordinate_excel(
                 content={"error": f"Excel文件缺少必要的列: {', '.join(missing_columns)}"}
             )
         
+        # 验证转换类型
+        allowed_types = [
+            "wgs84_to_gcj02", "wgs84_to_bd09", 
+            "gcj02_to_wgs84", "gcj02_to_bd09", 
+            "bd09_to_wgs84", "bd09_to_gcj02"
+        ]
+        
+        if type not in allowed_types:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"不支持的转换类型: {type}，支持的类型有: {', '.join(allowed_types)}"}
+            )
+            
         # 解析转换类型
         from_sys, to_sys = type.split("_to_")
         

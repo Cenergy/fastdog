@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # 文件上传设置
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
     ALLOWED_UPLOAD_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx"]
+    CONVERTERS_HANDLE_MAX_EXCEL_SIZE: int = 5 * 1024 * 1024  # 5MB
 
     # API设置
     RATE_LIMIT_PER_MINUTE: int = 60
