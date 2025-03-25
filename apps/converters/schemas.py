@@ -1,5 +1,6 @@
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
 from datetime import datetime
 from .models import ConverterType
 
@@ -40,3 +41,16 @@ class ConversionResponse(BaseModel):
     message: str
     file_url: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
+
+class CoordinateConversionRequest(BaseModel):
+    """坐标转换请求模型"""
+    lng: float = Field(..., description="经度")
+    lat: float = Field(..., description="纬度")
+    from_sys: str = Field(..., description="原始坐标系统，可选值：'wgs84', 'gcj02', 'bd09'")
+    to_sys: str = Field(..., description="目标坐标系统，可选值：'wgs84', 'gcj02', 'bd09'")
+
+class CoordinateConversionResponse(BaseModel):
+    """坐标转换响应模型"""
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="消息")
+    data: Dict[str, Any] = Field(None, description="转换结果数据")
