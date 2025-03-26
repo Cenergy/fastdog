@@ -26,15 +26,15 @@ async def init_db():
         from apps.users.crud import get_user_by_username_or_email, create_user
         from core.security import get_password_hash
 
-        admin_email = "admin@example.com"
+        admin_email = settings.DEFAULT_ADMIN_EMAIL
         admin_user = await get_user_by_username_or_email(admin_email)
         
         if not admin_user:
             logger.info("正在创建默认管理员账户...")
             admin_data = {
                 "email": admin_email,
-                "username": "admin",
-                "hashed_password": get_password_hash("admin123"),
+                "username": settings.DEFAULT_ADMIN_USERNAME,
+                "hashed_password": get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
                 "is_active": True,
                 "is_superuser": True,
                 "email_verified": True,

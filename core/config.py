@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     ADMIN_USER_MODEL_USERNAME_FIELD: str = "username"
     ADMIN_SECRET_KEY: str = "your_secret_key"
     ADMIN_DISABLE_CROP_IMAGE: bool = False
+    
+    # 默认管理员账户设置
+    DEFAULT_ADMIN_EMAIL: str = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
+    DEFAULT_ADMIN_USERNAME: str = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+    DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
     class Config:
         case_sensitive = True
