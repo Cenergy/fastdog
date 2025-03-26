@@ -13,6 +13,8 @@ import inspect
 import os
 import logging
 
+from apps.tasks import  admin as TaskModelAdmin
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
