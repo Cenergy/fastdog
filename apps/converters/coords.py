@@ -31,11 +31,8 @@ from api.v1.deps import get_current_active_user
 from apps.users.models import User
 from core.config import settings
 
-router = APIRouter(
-    # 移除prefix="/coords"，避免与主路由的prefix="/converters"重复
-    # 完整路径将是/converters/...
-    tags=["坐标转换"]     # 标签（主路由包含时会覆盖）
-)
+router = APIRouter(prefix="/coords")
+
 
 
 

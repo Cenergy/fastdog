@@ -5,7 +5,7 @@ from apps.resources.routes import router as resources_router
 from apps.converters.routes import router as converters_router
 
 api_router = APIRouter()
-api_router.include_router(users_router, prefix="/users", tags=["users"])
-api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
-api_router.include_router(resources_router, prefix="/resources", tags=["resources"])
-api_router.include_router(converters_router, prefix="/converters", tags=["converters"])
+api_router.include_router(users_router, prefix="/users", tags=["用户"])
+api_router.include_router(auth_router, prefix="/auth", tags=["权限"])
+api_router.include_router(resources_router, prefix="/resources", tags=["资源"])
+api_router.include_router(converters_router, prefix="/converters", tags=["转换器"])
