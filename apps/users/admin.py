@@ -16,6 +16,12 @@ class UserModelAdmin(TortoiseModelAdmin):
     ordering = ["-created_at"]
     exclude_fields = ["hashed_password", "email_verification_token", "password_reset_token", "password_reset_token_expires"]
     
+    async def save_model(self, id: int | None, payload: dict) -> dict | None:
+        if "hashed_password" in payload:
+            from core.security import get_password_hash
+            payload["hashed_password"] = get_password_hash(payload.pop("hashed_password"))
+        return await super().save_model(id, payload)
+    
     async def authenticate(self, username: str, password: str) -> int | None:
         """验证用户名和密码
         
