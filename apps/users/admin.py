@@ -1,7 +1,9 @@
 from fastadmin import TortoiseModelAdmin, register
+from fastadmin import TortoiseInlineModelAdmin, TortoiseModelAdmin, WidgetType, action, display
 from .models import User
 from .crud import get_user_by_username_or_email
-from core.security import verify_password
+from core.security import verify_password, get_password_hash
+
 
 @register(User)
 class UserModelAdmin(TortoiseModelAdmin):
@@ -15,12 +17,35 @@ class UserModelAdmin(TortoiseModelAdmin):
     list_per_page = 15
     ordering = ["-created_at"]
     exclude_fields = ["hashed_password", "email_verification_token", "password_reset_token", "password_reset_token_expires"]
+
+    formfield_overrides = {  # noqa: RUF012
+        "username": (WidgetType.SlugInput, {"required": True}),
+        "hashed_password": (WidgetType.PasswordInput, {"passwordModalForm": True}),
+    }
+
     
     async def save_model(self, id: int | None, payload: dict) -> dict | None:
         if "hashed_password" in payload:
-            from core.security import get_password_hash
             payload["hashed_password"] = get_password_hash(payload.pop("hashed_password"))
         return await super().save_model(id, payload)
+    
+    async def change_password(self, user_id: int, password: str) -> bool:
+        """修改用户密码
+        
+        Args:
+            user_id: 用户ID
+            password: 新密码
+            
+        Returns:
+            bool: 修改成功返回True，失败返回False
+        """
+        user = await self.model_cls.filter(id=user_id).first()
+        if not user:
+            return False
+            
+        user.hashed_password = get_password_hash(password)
+        await user.save()
+        return True
     
     async def authenticate(self, username: str, password: str) -> int | None:
         """验证用户名和密码
