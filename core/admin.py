@@ -14,6 +14,7 @@ import os
 import logging
 
 from apps.tasks import  admin as TaskModelAdmin
+from apps.ideas import  admin as IdeaModelAdmin
 
 # 配置日志
 logger = logging.getLogger(__name__)
