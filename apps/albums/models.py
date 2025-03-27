@@ -68,3 +68,29 @@ class Photo(models.Model):
     
     def __str__(self):
         return self.title or f"Photo {self.id}"
+        
+    async def to_dict(self, **kwargs):
+        """自定义字典转换方法
+        
+        重写以确保original_url字段在序列化时使用thumbnail_url的值（如果存在）
+        
+        Returns:
+            处理后的对象数据字典
+        """
+        # 先获取原始数据字典
+        data = await super().to_dict(**kwargs)
+        
+        # 如果有缩略图但original_url为空或默认值，使用缩略图
+        if self.thumbnail_url and (
+            not self.original_url or 
+            self.original_url == [] or
+            self.original_url == ["/static/default.png"] or 
+            self.original_url == "/static/default.png"
+        ):
+            data["original_url"] = [self.thumbnail_url]
+            
+            # 同时更新模型字段值
+            self.original_url = [self.thumbnail_url]
+            await self.save(update_fields=["original_url"])
+            
+        return data

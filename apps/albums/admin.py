@@ -435,14 +435,33 @@ class PhotoModelAdmin(TortoiseModelAdmin):
             if not payload.get("album"):
                 raise ValueError("所属相册不能为空")
 
+            # 如果是编辑现有记录，检查数据库中的thumbnail_url
+            if id:
+                existing = await Photo.get_or_none(id=id)
+                if existing and existing.thumbnail_url:
+                    if not payload.get("original_url") or payload.get("original_url") == [] or payload.get("original_url") == ["/static/default.png"]:
+                        payload["original_url"] = [existing.thumbnail_url]
+                        print(f"从现有记录中更新original_url为thumbnail_url: {existing.thumbnail_url}")
+
             # 确保original_url字段有一个默认值
             if "original_url" not in payload or payload["original_url"] is None:
-                payload["original_url"] = "/static/default.png"
+                payload["original_url"] = ["/static/default.png"]
             
             # 确保exif_data字段有一个默认值
             if "exif_data" not in payload or payload["exif_data"] is None:
                 payload["exif_data"] = {}
             
+            # 检查如果有thumbnail_url但original_url是空列表或默认列表，则使用thumbnail_url
+            if "thumbnail_url" in payload and payload["thumbnail_url"] and (
+                not payload["original_url"] or 
+                payload["original_url"] == ["/static/default.png"] or 
+                payload["original_url"] == "/static/default.png"):
+                payload["original_url"] = [payload["thumbnail_url"]]
+            
+            # 确保original_url始终是列表类型
+            if isinstance(payload["original_url"], str):
+                payload["original_url"] = [payload["original_url"]]
+                
             if "original_url" in payload and payload["original_url"] is not None:
                 files = payload["original_url"]
                 if not isinstance(files, list):
@@ -492,7 +511,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                             
                             # 更新图片URL到payload
                             file_payload = {
-                                "original_url": f"/static/uploads/photos/{unique_filename}",
+                                "original_url": [f"/static/uploads/photos/{unique_filename}"],
                                 "album": payload.get("album"),
                                 "title": payload.get("title") or "未命名照片",
                                 "description": payload.get("description"),
@@ -539,7 +558,21 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                                 file_payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
                             else:
                                 # 如果原图小于预览图尺寸，则使用原图作为预览图
-                                file_payload["preview_url"] = file_payload["original_url"]
+                                if isinstance(file_payload["original_url"], list) and file_payload["original_url"]:
+                                    file_payload["preview_url"] = file_payload["original_url"][0]
+                                else:
+                                    file_payload["preview_url"] = f"/static/uploads/photos/{unique_filename}"
+                            
+                            # 更新关联的payload
+                            # 如果原图是默认地址或不存在，但有缩略图，使用缩略图作为原图
+                            if ("original_url" not in file_payload or 
+                                not file_payload["original_url"] or
+                                (isinstance(file_payload["original_url"], list) and (not file_payload["original_url"] or file_payload["original_url"] == ["/static/default.png"])) or
+                                file_payload["original_url"] == "/static/default.png") and "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                                file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                            
+                            if not file_payload.get("album"):
+                                raise ValueError("缺少必需字段：album")
                             
                             processed_files.append(file_payload)
                             
@@ -587,7 +620,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                         
                         # 更新图片URL到payload
                         file_payload = {
-                            "original_url": f"/static/uploads/photos/{unique_filename}",
+                            "original_url": [f"/static/uploads/photos/{unique_filename}"],
                             "original_filename": original_filename,
                             "album": payload.get("album"),
                             "title": payload.get("title") or "未命名照片",
@@ -655,7 +688,21 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                                 file_payload["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
                             else:
                                 # 如果原图小于预览图尺寸，则使用原图作为预览图
-                                file_payload["preview_url"] = file_payload["original_url"]
+                                if isinstance(file_payload["original_url"], list) and file_payload["original_url"]:
+                                    file_payload["preview_url"] = file_payload["original_url"][0]
+                                else:
+                                    file_payload["preview_url"] = f"/static/uploads/photos/{unique_filename}"
+                            
+                            # 更新关联的payload
+                            # 如果原图是默认地址或不存在，但有缩略图，使用缩略图作为原图
+                            if ("original_url" not in file_payload or 
+                                not file_payload["original_url"] or
+                                (isinstance(file_payload["original_url"], list) and (not file_payload["original_url"] or file_payload["original_url"] == ["/static/default.png"])) or
+                                file_payload["original_url"] == "/static/default.png") and "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                                file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                            
+                            if not file_payload.get("album"):
+                                raise ValueError("缺少必需字段：album")
                             
                             processed_files.append(file_payload)
                         except UnidentifiedImageError:
@@ -667,7 +714,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                     elif isinstance(file, str) and (file.startswith('/static/uploads/') or file == '/static/default.png'):
                         # 如果是已有图片的URL或默认图片，确保保留并验证它
                         file_payload = {
-                            "original_url": file,
+                            "original_url": [file],
                             "album": payload.get("album"),
                             "title": payload.get("title") or "未命名照片",
                             "description": payload.get("description"),
@@ -686,7 +733,15 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                         try:
                             # 确保必需字段存在
                             if not file_payload.get("original_url"):
-                                file_payload["original_url"] = "/static/default.png"  # 使用默认值
+                                if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                                    file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                                else:
+                                    file_payload["original_url"] = ["/static/default.png"]  # 使用默认值
+                            elif (isinstance(file_payload["original_url"], str) and file_payload["original_url"] == "/static/default.png") or \
+                                 (isinstance(file_payload["original_url"], list) and (not file_payload["original_url"] or file_payload["original_url"] == ["/static/default.png"])):
+                                if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                                    file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                            
                             if not file_payload.get("album"):
                                 raise ValueError("缺少必需字段：album")
                             
@@ -707,7 +762,15 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                     file_payload = processed_files[0]
                     # 确保必需字段存在
                     if not file_payload.get("original_url"):
-                        file_payload["original_url"] = "/static/default.png"  # 使用默认值
+                        if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                            file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                        else:
+                            file_payload["original_url"] = ["/static/default.png"]  # 使用默认值
+                    elif (isinstance(file_payload["original_url"], str) and file_payload["original_url"] == "/static/default.png") or \
+                         (isinstance(file_payload["original_url"], list) and (not file_payload["original_url"] or file_payload["original_url"] == ["/static/default.png"])):
+                        if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
+                            file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                    
                     if not file_payload.get("album"):
                         raise ValueError("缺少必需字段：album")
                     
@@ -725,11 +788,18 @@ class PhotoModelAdmin(TortoiseModelAdmin):
                 pass
             else:
                 # 使用默认值
-                payload["original_url"] = "/static/default.png"
+                payload["original_url"] = ["/static/default.png"]
             
-            # 在保存前再次确保important字段有值
+            # 保存前再次确保important字段有值
             if not payload.get("original_url"):
-                payload["original_url"] = "/static/default.png"  # 使用默认值
+                # 如果有缩略图但没有原图，使用缩略图作为原图
+                if "thumbnail_url" in payload and payload["thumbnail_url"]:
+                    payload["original_url"] = [payload["thumbnail_url"]]
+                else:
+                    payload["original_url"] = ["/static/default.png"]  # 使用默认值
+            elif payload.get("original_url") == "/static/default.png" and "thumbnail_url" in payload and payload["thumbnail_url"]:
+                # 如果原图是默认地址但有缩略图，使用缩略图作为原图
+                payload["original_url"] = [payload["thumbnail_url"]]
             
             if not payload.get("album"):
                 raise ValueError("所属相册不能为空")
@@ -742,7 +812,7 @@ class PhotoModelAdmin(TortoiseModelAdmin):
             for key, value in list(payload.items()):
                 if value is None and key != 'description' and key != 'title' and key != 'location' and key != 'taken_at':
                     if key == 'original_url':
-                        payload[key] = "/static/default.png"
+                        payload[key] = ["/static/default.png"]
                     elif key == 'exif_data':
                         payload[key] = {}
             
@@ -751,6 +821,38 @@ class PhotoModelAdmin(TortoiseModelAdmin):
             # 保存照片
             try:
                 result = await super().save_model(id, payload)
+                
+                # 保存后验证并修复 - 确保 original_url 真的被保存到数据库
+                if result and "id" in result:
+                    saved_photo = await self.model.get(id=result["id"])
+                    print(f"保存后的photo.original_url: {saved_photo.original_url}, photo.thumbnail_url: {saved_photo.thumbnail_url}")
+                    
+                    # 如果保存后 original_url 为空或默认值，但有 thumbnail_url，直接更新数据库
+                    if saved_photo.thumbnail_url and (
+                        not saved_photo.original_url or
+                        saved_photo.original_url == [] or
+                        saved_photo.original_url == ["/static/default.png"] or
+                        saved_photo.original_url == "/static/default.png"
+                    ):
+                        saved_photo.original_url = [saved_photo.thumbnail_url]
+                        await saved_photo.save()
+                        print(f"保存后修复: 更新了 photo.original_url 为 {saved_photo.original_url}")
+                        
+                        # 再次检查更新是否成功
+                        check_photo = await self.model.get(id=result["id"])
+                        print(f"再次检查: photo.original_url = {check_photo.original_url}")
+                        
+                        # 如果数据库更新失败，尝试强制更新
+                        if not check_photo.original_url or check_photo.original_url == []:
+                            # 使用原始SQL尝试更新
+                            from tortoise.expressions import RawSQL
+                            await self.model.filter(id=result["id"]).update(original_url=RawSQL(f"'[\"{saved_photo.thumbnail_url}\"]'"))
+                            print(f"使用RawSQL更新original_url: {saved_photo.thumbnail_url}")
+                            
+                            # 最后检查
+                            final_check = await self.model.get(id=result["id"])
+                            print(f"最终检查: photo.original_url = {final_check.original_url}")
+                
                 return result
             except Exception as e:
                 print(f"保存照片记录时出错: {str(e)}")
