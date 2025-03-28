@@ -39,7 +39,7 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     thumbnail_filename = f"{unique_id}_thumbnail.jpg"
     thumbnail_path = os.path.join(upload_dir, thumbnail_filename)
     thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
-    result["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
+    result["thumbnail_url"] = f"/static/uploads/albums/{thumbnail_filename}"
     
     # 生成预览图 (1000px宽)
     if width > 1000:
@@ -51,7 +51,7 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
         preview_filename = f"{unique_id}_preview.jpg"
         preview_path = os.path.join(upload_dir, preview_filename)
         preview.convert("RGB").save(preview_path, "JPEG", quality=90)
-        result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
+        result["preview_url"] = f"/static/uploads/albums/{preview_filename}"
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
         # 确保original_url已经被设置
@@ -215,6 +215,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
     
     处理相册的创建、编辑、删除等管理操作
     支持封面图片的上传和处理
+    删除相册及其关联的所有图片文件
     """
     model = Album
     icon = "image"
@@ -362,6 +363,72 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             return result
         except Exception as e:
             print(f"保存相册时出错: {str(e)}")
+            raise e
+        
+    async def delete_model(self, id: str) -> bool:
+        """删除相册及其关联的所有图片文件
+        
+        Args:
+            id: 相册ID
+            
+        Returns:
+            删除是否成功
+        """
+        try:
+            # 获取相册对象
+            album = await self.model.get(id=id)
+            
+            # 删除封面图片及其预览图和缩略图
+            if album.cover_image and album.cover_image.startswith('/static/uploads/'):
+                # 删除原图
+                cover_path = os.path.join(settings.STATIC_DIR, album.cover_image.replace('/static/', ''))
+                if os.path.exists(cover_path):
+                    os.remove(cover_path)
+                
+                # 构造并删除预览图
+                preview_path = cover_path.replace('/uploads/', '/uploads/preview/')
+                if os.path.exists(preview_path):
+                    os.remove(preview_path)
+                
+                # 构造并删除缩略图
+                thumbnail_path = cover_path.replace('/uploads/', '/uploads/thumbnail/')
+                if os.path.exists(thumbnail_path):
+                    os.remove(thumbnail_path)
+            
+            # 获取相册下的所有照片
+            photos = await Photo.filter(album_id=id)
+            
+            # 删除每张照片的文件
+            for photo in photos:
+                # 删除原图
+                if isinstance(photo.original_url, list):
+                    for url in photo.original_url:
+                        if url.startswith('/static/uploads/'):
+                            file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                elif isinstance(photo.original_url, str) and photo.original_url.startswith('/static/uploads/'):
+                    file_path = os.path.join(settings.STATIC_DIR, photo.original_url.replace('/static/', ''))
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                
+                # 删除缩略图
+                if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
+                    thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
+                    if os.path.exists(thumbnail_path):
+                        os.remove(thumbnail_path)
+                
+                # 删除预览图
+                if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):
+                    preview_path = os.path.join(settings.STATIC_DIR, photo.preview_url.replace('/static/', ''))
+                    if os.path.exists(preview_path):
+                        os.remove(preview_path)
+            
+            # 删除相册记录（这会级联删除所有关联的照片记录）
+            return await super().delete_model(id)
+            
+        except Exception as e:
+            print(f"删除相册及其图片文件时出错: {str(e)}")
             raise e
 
 
