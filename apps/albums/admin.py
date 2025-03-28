@@ -13,7 +13,7 @@ from fastadmin.api.helpers import is_valid_base64
 from typing import Optional, Dict, Any, List, Tuple
 
 
-def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int) -> Dict[str, Any]:
+def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int,file_ext:str='.png') -> Dict[str, Any]:
     """处理图片，生成缩略图和预览图
     
     Args:
@@ -55,9 +55,10 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
         # 确保original_url已经被设置
+        unique_filename = unique_id+file_ext
         if "original_url" not in result:
             # 如果没有设置original_url，使用一个默认值
-            result["original_url"] = f"/static/uploads/albums/{unique_id}"
+            result["original_url"] = f"/static/uploads/albums/{unique_filename}"
         result["preview_url"] = result["original_url"]
     
     return result
@@ -115,7 +116,7 @@ def create_file_payload(unique_filename: str, payload: Dict[str, Any], file_type
     }
 
 
-def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes]:
+def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes, str]:
     """处理base64编码的图片
     
     Args:
@@ -123,7 +124,7 @@ def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes]:
         upload_dir: 上传目录路径
         
     Returns:
-        包含文件名和图片数据的元组
+        包含文件名、图片数据和文件类型的元组
     
     Raises:
         ValueError: 当base64数据格式无效或图片格式不支持时
@@ -140,10 +141,10 @@ def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes]:
     if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic']:
         raise ValueError(f"不支持的图片格式: {file_type}")
     
-    unique_filename = f"{uuid4().hex}.{file_type}"
+    unique_filename = f"{uuid4().hex}"
     image_data = base64.b64decode(base64_data)
     
-    return unique_filename, image_data
+    return unique_filename, image_data,file_type
 
 
 def process_upload_file(file: UploadFile) -> Tuple[str, str]:
@@ -307,8 +308,8 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     raise ValueError("无效的base64图片格式或不支持的图片类型")
                     
                 # 处理base64编码的图片
-                unique_filename, image_data = process_base64_image(file, upload_dir)
-                file_path = os.path.join(upload_dir, unique_filename)
+                unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
+                file_path = os.path.join(upload_dir, f"{unique_filename}.{file_type}")
                 save_image_file(file_path, image_data)
                 
                 # 处理图片信息
@@ -316,10 +317,10 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 dimensions = get_image_dimensions(image)
                 
                 # 设置原始图片URL
-                original_url = f"/static/uploads/albums/{unique_filename}"
+                original_url = f"/static/uploads/albums/{unique_filename}.{file_type}"
                 
                 # 生成缩略图和预览图
-                result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"])
+                result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"], f".{file_type}")
                 # 确保result中包含original_url
                 result["original_url"] = original_url
                 return original_url
