@@ -3,6 +3,7 @@ from tortoise.fields import CharField, TextField, JSONField
 from .models import Album, Photo, PhotoFormat
 from fastapi import UploadFile
 from uuid import UUID, uuid4
+from uuid import UUID
 import os
 import re
 import base64
@@ -11,6 +12,47 @@ import io
 from core.config import settings
 from fastadmin.api.helpers import is_valid_base64
 from typing import Optional, Dict, Any, List, Tuple
+
+
+
+class CustomModelAdmin(TortoiseModelAdmin):
+    """自定义ModelAdmin基类，用于在不修改源码的情况下重写BaseModelAdmin方法"""
+    
+    async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
+        """This method is used to save orm/db model object.
+
+        :params id: an id of object.
+        :params payload: a payload from request.
+        :return: A saved object or None.
+        """
+        fields = self.get_model_fields_with_widget_types(with_m2m=False, with_upload=False)
+        m2m_fields = self.get_model_fields_with_widget_types(with_m2m=True)
+        upload_fields = self.get_model_fields_with_widget_types(with_upload=True)
+
+        fields_payload = {
+            field.column_name: self.deserialize_value(field, payload[field.name])
+            for field in fields
+            if field.name in payload
+        }
+        obj = await self.orm_save_obj(id, fields_payload)
+        if not obj:
+            return None
+
+        for upload_field in upload_fields:
+            if upload_field.name in payload:
+                # 处理可能是列表的情况
+                field_value = payload[upload_field.name]
+                if isinstance(field_value, list):
+                    # 如果是列表，跳过base64验证，由具体的ModelAdmin处理
+                    continue
+                elif isinstance(field_value, str) and is_valid_base64(field_value):
+                    await self.orm_save_upload_field(obj, upload_field.column_name, payload[upload_field.name])
+
+        for m2m_field in m2m_fields:
+            if m2m_field.name in payload:
+                await self.orm_save_m2m_ids(obj, m2m_field.column_name, payload[m2m_field.name])
+
+        return await self.serialize_obj(obj)
 
 
 def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int,file_ext:str='.png') -> Dict[str, Any]:
@@ -431,9 +473,20 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             print(f"删除相册及其图片文件时出错: {str(e)}")
             raise e
 
+    async def to_dict(self, **kwargs) -> dict:
+        """自定义字典转换方法
+
+        重写以确保original_url字段在序列化时使用thumbnail_url的值（如果存在）
+
+        Returns:
+            处理后的对象数据字典
+        """
+        # 先获取原始数据字典
+        data = await super().to_dict(**kwargs)
+        print(f"to_dict 原始数据字典: {data}")
 
 @register(Photo)
-class PhotoModelAdmin(TortoiseModelAdmin):
+class PhotoModelAdmin(CustomModelAdmin):
     """照片管理类
     
     处理照片的创建、编辑、删除等管理操作

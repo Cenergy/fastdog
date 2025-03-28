@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastadmin import fastapi_app as admin_app
-from fastadmin import TortoiseModelAdmin, register, ModelAdmin
+from fastadmin import TortoiseModelAdmin, register, ModelAdmin, action, display, WidgetType
 from apps.users.models import User
 from core.config import settings
 from apps.users.crud import get_user_by_username_or_email
 from core.security import verify_password
 
 from typing import Type, Dict, List, Tuple, Any, Optional
+from uuid import UUID
 import importlib
 import pkgutil
 import inspect
@@ -18,6 +19,8 @@ from apps.ideas import  admin as IdeaModelAdmin
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
 
 class AdminRegistry:
     """FastAdmin模型注册表类，用于管理所有注册的ModelAdmin类"""
