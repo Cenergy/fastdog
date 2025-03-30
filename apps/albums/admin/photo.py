@@ -1,139 +1,23 @@
 from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
 from tortoise.fields import CharField, TextField, JSONField
-from ..models import Album, Photo, PhotoFormat
-from uuid import UUID, uuid4
-from typing import Optional, Dict, Any, List, Tuple
-from PIL import Image
-import os
-import io
-import base64
+from ..models import Photo, PhotoFormat, Album
 from fastapi import UploadFile
+from uuid import UUID
+from PIL import Image
+import io
 from core.config import settings
-from fastadmin.api.helpers import is_valid_base64
-class PhotoUtils:
-    """照片处理工具类"""
-    
-    @staticmethod
-    def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int, file_ext: str = '.png') -> dict:
-        """处理图片，生成缩略图和预览图"""
-        result = {}
-        
-        # 生成缩略图
-        thumbnail = image.copy()
-        thumbnail.thumbnail((width, height))
-        thumbnail_filename = f"thumbnail_{unique_id}{file_ext}"
-        thumbnail_path = os.path.join(upload_dir, thumbnail_filename)
-        thumbnail.save(thumbnail_path)
-        result["thumbnail_url"] = f"/static/uploads/photos/{thumbnail_filename}"
-        
-        # 生成预览图
-        preview = image.copy()
-        preview.thumbnail((800, 800))
-        preview_filename = f"preview_{unique_id}{file_ext}"
-        preview_path = os.path.join(upload_dir, preview_filename)
-        preview.save(preview_path)
-        result["preview_url"] = f"/static/uploads/photos/{preview_filename}"
-        
-        # 保存原图
-        unique_filename = f"original_{unique_id}{file_ext}"
-        original_path = os.path.join(upload_dir, unique_filename)
-        image.save(original_path)
-        result["original_url"] = f"/static/uploads/photos/{unique_filename}"
-        
-        return result
-    
-    @staticmethod
-    def process_base64_image(base64_str: str, upload_dir: str) -> tuple:
-        """处理base64格式的图片数据"""
-        # 移除base64前缀
-        if "," in base64_str:
-            base64_str = base64_str.split(",")[1]
-            
-        # 解码base64数据
-        image_data = base64.b64decode(base64_str)
-        
-        # 生成唯一文件名
-        unique_id = str(uuid4())
-        
-        # 确定文件类型
-        image = Image.open(io.BytesIO(image_data))
-        file_type = image.format.lower()
-        
-        return unique_id, image_data, file_type
-    
-    @staticmethod
-    async def process_photo_file(file: UploadFile | str) -> Dict[str, Any]:
-        """处理上传的照片文件"""
-        upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        width, height = 200, 200  # 缩略图尺寸
-        
-        # 处理UploadFile类型
-        if isinstance(file, UploadFile):
-            content = await file.read()
-            image = Image.open(io.BytesIO(content))
-            file_type = image.format.lower()
-            unique_id = str(uuid4())
-            
-            return PhotoUtils.process_image(image, unique_id, upload_dir, width, height, f".{file_type}")
-        
-        # 处理base64字符串
-        elif isinstance(file, str) and is_valid_base64(file):
-            unique_id, image_data, file_type = PhotoUtils.process_base64_image(file, upload_dir)
-            image = Image.open(io.BytesIO(image_data))
-            
-            return PhotoUtils.process_image(image, unique_id, upload_dir, width, height, f".{file_type}")
-        
-        return {}
-
-
-class CustomModelAdmin(TortoiseModelAdmin):
-    """自定义ModelAdmin基类，用于在不修改源码的情况下重写BaseModelAdmin方法"""
-    
-    async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
-        """This method is used to save orm/db model object.
-
-        :params id: an id of object.
-        :params payload: a payload from request.
-        :return: A saved object or None.
-        """
-        fields = self.get_model_fields_with_widget_types(with_m2m=False, with_upload=False)
-        m2m_fields = self.get_model_fields_with_widget_types(with_m2m=True)
-        upload_fields = self.get_model_fields_with_widget_types(with_upload=True)
-
-        fields_payload = {
-            field.column_name: self.deserialize_value(field, payload[field.name])
-            for field in fields
-            if field.name in payload
-        }
-        obj = await self.orm_save_obj(id, fields_payload)
-        if not obj:
-            return None
-
-        for upload_field in upload_fields:
-            if upload_field.name in payload:
-                field_value = payload[upload_field.name]
-                if isinstance(field_value, list):
-                    continue
-                elif isinstance(field_value, str):
-                    # 处理图片上传
-                    photo_info = await PhotoUtils.process_photo_file(field_value)
-                    if photo_info:
-                        for key, value in photo_info.items():
-                            setattr(obj, key, value)
-                        await obj.save()
-
-        for m2m_field in m2m_fields:
-            if m2m_field.name in payload:
-                await self.orm_save_m2m_ids(obj, m2m_field.column_name, payload[m2m_field.name])
-
-        return await self.serialize_obj(obj)
-
+from .utils import process_image, save_image_file, process_base64_image, process_upload_file, get_image_dimensions, extract_exif_data, create_file_payload
+from typing import Dict, Any
+import os
 
 @register(Photo)
-class PhotoModelAdmin(CustomModelAdmin):
-    """照片管理类"""
+class PhotoModelAdmin(TortoiseModelAdmin):
+    """照片管理类
+    
+    处理照片的创建、编辑、删除等管理操作
+    支持单张和多张照片的上传和处理
+    包含缩略图和预览图的自动生成
+    """
     model = Photo
     order = 3
     icon = "camera"
@@ -160,7 +44,14 @@ class PhotoModelAdmin(CustomModelAdmin):
     
     @display
     async def album_name(self, obj) -> str:
-        """获取照片所属相册名称"""
+        """获取照片所属相册名称
+        
+        Args:
+            obj: 照片对象
+            
+        Returns:
+            相册名称，如果相册不存在则返回None
+        """
         if obj.album:
             album = await Album.get_or_none(id=obj.album_id)
             if album:
@@ -169,70 +60,180 @@ class PhotoModelAdmin(CustomModelAdmin):
 
     @display
     async def thumbnail_preview(self, obj) -> str:
-        """生成缩略图预览HTML"""
-        if obj.thumbnail_url:
-            return f'<img src="{obj.thumbnail_url}" style="max-width: 100px; max-height: 100px;" />'
-        return "-"
+        """生成缩略图预览HTML
         
+        Args:
+            obj: 照片对象
+            
+        Returns:
+            缩略图HTML代码，如果没有图片则返回"-"
+        """
+        if obj.thumbnail_url:
+            return f'<a href="{obj.preview_url or obj.original_url}" target="_blank"><img src="{obj.thumbnail_url}" height="50" /></a>'
+        return "-"
+
+    async def process_photo(self, file: UploadFile | str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """处理照片文件
+        
+        Args:
+            file: 上传的文件对象或base64字符串
+            payload: 请求的payload数据
+            
+        Returns:
+            处理后的照片数据
+            
+        Raises:
+            ValueError: 当文件格式不支持或处理失败时
+        """
+        upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        try:
+            if isinstance(file, UploadFile):
+                # 处理上传的文件
+                file_ext, unique_filename = process_upload_file(file)
+                file_path = os.path.join(upload_dir, unique_filename)
+                content = await file.read()
+                save_image_file(file_path, content)
+                
+                # 处理图片信息
+                image = Image.open(io.BytesIO(content))
+                dimensions = get_image_dimensions(image)
+                exif_data = extract_exif_data(image)
+                
+                # 创建文件处理的payload
+                result = create_file_payload(unique_filename, payload)
+                
+                # 生成缩略图和预览图
+                image_result = process_image(image, unique_filename.split('.')[0], upload_dir, dimensions["width"], dimensions["height"], file_ext)
+                result.update(image_result)
+                
+                # 添加EXIF数据
+                result["exif_data"] = exif_data
+                
+                return result
+                
+            elif isinstance(file, str):
+                # 处理base64编码的图片
+                unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
+                file_path = os.path.join(upload_dir, f"{unique_filename}.{file_type}")
+                save_image_file(file_path, image_data)
+                
+                # 处理图片信息
+                image = Image.open(io.BytesIO(image_data))
+                dimensions = get_image_dimensions(image)
+                exif_data = extract_exif_data(image)
+                
+                # 创建文件处理的payload
+                result = create_file_payload(f"{unique_filename}.{file_type}", payload)
+                
+                # 生成缩略图和预览图
+                image_result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"], f".{file_type}")
+                result.update(image_result)
+                
+                # 添加EXIF数据
+                result["exif_data"] = exif_data
+                
+                return result
+            else:
+                raise ValueError("不支持的文件格式，仅支持文件上传或base64图片")
+                
+        except Exception as e:
+            print(f"处理照片时出错: {str(e)}")
+            if isinstance(e, ValueError):
+                raise e
+            raise ValueError(f"处理照片失败: {str(e)}")
+
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         """保存照片模型
         
-        处理照片上传和保存的逻辑，包括：
-        1. 处理单张或多张图片上传
-        2. 生成缩略图和预览图
-        3. 保存照片元数据
-        
         Args:
-            id: 照片ID，新建时为None
-            payload: 请求数据
+            id: 照片ID
+            payload: 请求的payload数据
             
         Returns:
-            保存后的照片数据或None
+            保存后的照片数据
         """
         try:
-            if "original_url" in payload:
+            if "original_url" in payload and payload["original_url"] is not None:
                 files = payload["original_url"]
                 if not isinstance(files, list):
                     files = [files]
                 
-                # 处理所有上传的图片
                 processed_files = []
                 for file in files:
                     if file:
-                        photo_info = await PhotoUtils.process_photo_file(file)
-                        if photo_info:
-                            processed_files.append(photo_info)
+                        result = await self.process_photo(file, payload)
+                        processed_files.append(result)
                 
-                # 更新payload中的图片URL
                 if processed_files:
-                    payload["original_url"] = [info["original_url"] for info in processed_files]
-                    payload["thumbnail_url"] = processed_files[0]["thumbnail_url"]
-                    payload["preview_url"] = processed_files[0]["preview_url"]
+                    # 更新payload中的字段
+                    first_file = processed_files[0]
+                    payload.update({
+                        "original_url": first_file["original_url"],
+                        "thumbnail_url": first_file.get("thumbnail_url"),
+                        "preview_url": first_file.get("preview_url"),
+                        "exif_data": first_file.get("exif_data", {})
+                    })
                     
-                    # 如果是多张图片，将其他图片的信息保存到formats字段
+                    # 如果有多个文件，创建额外的照片记录
                     if len(processed_files) > 1:
-                        formats = []
-                        for info in processed_files[1:]:
-                            format_data = {
-                                "original_url": info["original_url"],
-                                "thumbnail_url": info["thumbnail_url"],
-                                "preview_url": info["preview_url"]
-                            }
-                            formats.append(format_data)
-                        payload["formats"] = formats
+                        for file_data in processed_files[1:]:
+                            new_payload = payload.copy()
+                            new_payload.update({
+                                "original_url": file_data["original_url"],
+                                "thumbnail_url": file_data.get("thumbnail_url"),
+                                "preview_url": file_data.get("preview_url"),
+                                "exif_data": file_data.get("exif_data", {})
+                            })
+                            await super().save_model(None, new_payload)
             
-            # 调用父类的save_model方法保存数据
-            result = await super().save_model(id, payload)
-            
-            # 验证保存结果
-            if result and "id" in result:
-                saved_photo = await self.model.get(id=result["id"])
-                if "original_url" in payload and isinstance(payload["original_url"], list):
-                    saved_photo.original_url = payload["original_url"]
-                    await saved_photo.save()
-            
-            return result
+            return await super().save_model(id, payload)
             
         except Exception as e:
             print(f"保存照片时出错: {str(e)}")
+            raise e
+
+    async def delete_model(self, id: str) -> bool:
+        """删除照片及其关联的文件
+        
+        Args:
+            id: 照片ID
+            
+        Returns:
+            删除是否成功
+        """
+        try:
+            # 获取照片对象
+            photo = await self.model.get(id=id)
+            
+            # 删除原图
+            if isinstance(photo.original_url, list):
+                for url in photo.original_url:
+                    if url.startswith('/static/uploads/'):
+                        file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+            elif isinstance(photo.original_url, str) and photo.original_url.startswith('/static/uploads/'):
+                file_path = os.path.join(settings.STATIC_DIR, photo.original_url.replace('/static/', ''))
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            
+            # 删除缩略图
+            if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
+                thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
+                if os.path.exists(thumbnail_path):
+                    os.remove(thumbnail_path)
+            
+            # 删除预览图
+            if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):
+                preview_path = os.path.join(settings.STATIC_DIR, photo.preview_url.replace('/static/', ''))
+                if os.path.exists(preview_path):
+                    os.remove(preview_path)
+            
+            # 删除照片记录
+            return await super().delete_model(id)
+            
+        except Exception as e:
+            print(f"删除照片及其文件时出错: {str(e)}")
             raise e

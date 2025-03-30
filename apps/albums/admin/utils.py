@@ -1,19 +1,14 @@
-from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
-from tortoise.fields import CharField, TextField, JSONField
-from ..models import Album, Photo, PhotoFormat
-from fastapi import UploadFile
-from uuid import UUID, uuid4
-from uuid import UUID
-import os
-import re
-import base64
 from PIL import Image, UnidentifiedImageError
-import io
+from uuid import UUID, uuid4
 from core.config import settings
 from fastadmin.api.helpers import is_valid_base64
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
+import os
+import io
+import base64
+import re
 
-def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int,file_ext:str='.png') -> Dict[str, Any]:
+def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int, file_ext: str = '.png') -> Dict[str, Any]:
     """处理图片，生成缩略图和预览图
     
     Args:
@@ -55,14 +50,13 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
         # 确保original_url已经被设置
-        unique_filename = unique_id+file_ext
+        unique_filename = unique_id + file_ext
         if "original_url" not in result:
             # 如果没有设置original_url，使用一个默认值
             result["original_url"] = f"/static/uploads/albums/{unique_filename}"
         result["preview_url"] = result["original_url"]
     
     return result
-
 
 def ensure_upload_dirs() -> Tuple[str, str, str]:
     """确保上传目录存在
@@ -80,7 +74,6 @@ def ensure_upload_dirs() -> Tuple[str, str, str]:
     
     return upload_dir, thumbnails_dir, previews_dir
 
-
 def save_image_file(file_path: str, content: bytes) -> None:
     """保存图片文件到指定路径
     
@@ -92,7 +85,6 @@ def save_image_file(file_path: str, content: bytes) -> None:
         f.write(content)
         f.flush()
         os.fsync(f.fileno())
-
 
 def create_file_payload(unique_filename: str, payload: Dict[str, Any], file_type: str = "photos") -> Dict[str, Any]:
     """创建文件处理的payload
@@ -114,7 +106,6 @@ def create_file_payload(unique_filename: str, payload: Dict[str, Any], file_type
         "sort_order": payload.get("sort_order", 0),
         "exif_data": {}  # 默认空字典
     }
-
 
 def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes, str]:
     """处理base64编码的图片
@@ -144,10 +135,9 @@ def process_base64_image(base64_str: str, upload_dir: str) -> Tuple[str, bytes, 
     unique_filename = f"{uuid4().hex}"
     image_data = base64.b64decode(base64_data)
     
-    return unique_filename, image_data,file_type
+    return unique_filename, image_data, file_type
 
-
-def process_upload_file(file: UploadFile) -> Tuple[str, str]:
+def process_upload_file(file: Any) -> Tuple[str, str]:
     """处理上传的文件
     
     Args:
@@ -165,7 +155,6 @@ def process_upload_file(file: UploadFile) -> Tuple[str, str]:
     
     unique_filename = f"{uuid4().hex}{file_ext}"
     return file_ext, unique_filename
-
 
 def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
     """从图片中提取EXIF数据
@@ -191,7 +180,6 @@ def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
         print(f"提取EXIF数据时出错: {str(e)}")
     
     return exif_data
-
 
 def get_image_dimensions(image: Image.Image) -> Dict[str, int]:
     """获取图片尺寸信息
