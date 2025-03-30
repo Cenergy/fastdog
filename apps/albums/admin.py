@@ -686,6 +686,19 @@ class PhotoModelAdmin(CustomModelAdmin):
                     files = [files]
                     print("格式化：将文件转换为列表格式")
                 
+                # 如果是多张图片上传，每张图片创建一个新的记录
+                if len(files) > 1 and not id:
+                    results = []
+                    for file in files:
+                        # 为每张图片创建新的payload
+                        single_payload = payload.copy()
+                        single_payload["original_url"] = file
+                        # 递归调用save_model处理单张图片
+                        result = await self.save_model(None, single_payload)
+                        if result:
+                            results.append(result)
+                    return results[0] if results else None
+                
                 processed_files = []
                 for file in files:
                     # 处理base64编码的图片
