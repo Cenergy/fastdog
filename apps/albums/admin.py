@@ -454,7 +454,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     if os.path.exists(file_path):
                         os.remove(file_path)
             
-            # 删除缩略图
+            # 删除缩略图1
             if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
                 thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
                 if os.path.exists(thumbnail_path):
