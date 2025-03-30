@@ -549,7 +549,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             return f'<img src="{obj.original_url}" height="50" />'
         return "-"
     
-    def process_photo_image(self, image: Image.Image, unique_id: str, upload_dir: str, thumbnails_dir: str, previews_dir: str, width: int, height: int) -> dict:
+    def process_photo_image(self, image: Image.Image, unique_id: str, upload_dir: str, thumbnails_dir: str, previews_dir: str, width: int, height: int, file_ext: str = '.jpg') -> dict:
         """处理图片，生成缩略图和预览图
         
         Args:
@@ -560,6 +560,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             previews_dir: 预览图目录路径
             width: 图片宽度
             height: 图片高度
+            file_ext: 文件扩展名，默认为.jpg
             
         Returns:
             包含图片处理结果的字典，包括缩略图和预览图URL
@@ -590,7 +591,8 @@ class PhotoModelAdmin(CustomModelAdmin):
             result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
         else:
             # 如果原图小于预览图尺寸，则使用原图作为预览图
-            result["preview_url"] = f"/static/uploads/photos/{unique_id}.jpg"
+            # 使用与原始文件相同的扩展名
+            result["preview_url"] = f"/static/uploads/photos/{unique_id}{file_ext}"
         
         return result
 
@@ -770,7 +772,8 @@ class PhotoModelAdmin(CustomModelAdmin):
                             print(f"图片尺寸：{width}x{height}, 文件大小：{len(content)}字节")
                             
                             # 处理图片并生成缩略图和预览图
-                            result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height)
+                            # 传递文件扩展名参数，确保预览图URL使用正确的扩展名
+                            result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height, f".{file_type}")
                             file_payload.update(result)
                             print("已生成缩略图和预览图")
                             
