@@ -14,6 +14,7 @@ import inspect
 import os
 import logging
 
+from apps.albums import  admin as AlbumModelAdmin
 from apps.tasks import  admin as TaskModelAdmin
 from apps.ideas import  admin as IdeaModelAdmin
 
