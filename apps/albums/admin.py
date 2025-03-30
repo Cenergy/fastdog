@@ -590,7 +590,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
         else:
             # 如果原图小于预览图尺寸，则使用原图作为预览图
-            result["preview_url"] = f"/static/uploads/photos/{unique_id}"
+            result["preview_url"] = f"/static/uploads/photos/{unique_id}.jpg"
         
         return result
 
