@@ -1054,6 +1054,57 @@ class PhotoModelAdmin(CustomModelAdmin):
                         if result:
                             results.append(result)
                     return results[0] if results else None
+                # 处理修改照片时的多图片上传情况
+                elif len(files) > 1 and id:
+                    # 当修改现有照片并上传多张图片时，使用第一张图片更新当前照片
+                    # 并为其余图片创建新记录
+                    results = []
+                    # 处理第一张图片 - 更新当前照片
+                    first_file = files[0]
+                    single_payload = payload.copy()
+                    single_payload["original_url"] = first_file
+                    
+                    # 处理第一张图片
+                    if isinstance(first_file, str) and first_file.startswith('data:image/'):
+                        file_payload = await self.process_base64_image(first_file, single_payload)
+                        payload.update(file_payload)  # 更新当前照片的payload
+                    elif isinstance(first_file, UploadFile):
+                        file_payload = await self.process_upload_file(first_file, single_payload)
+                        payload.update(file_payload)  # 更新当前照片的payload
+                    elif isinstance(first_file, str) and (first_file.startswith('/static/uploads/') or first_file == '/static/default.png'):
+                        file_payload = self.process_existing_url(first_file, single_payload)
+                        payload.update(file_payload)  # 更新当前照片的payload
+                    
+                    # 为剩余图片创建新记录
+                    for file in files[1:]:
+                        new_payload = payload.copy()
+                        new_payload["original_url"] = file
+                        # 递归调用save_model处理单张图片，创建新记录
+                        result = await self.save_model(None, new_payload)
+                        if result:
+                            results.append(result)
+                    
+                    # 保存当前照片并返回结果
+                    print(f"即将保存修改后的照片数据: {payload}")
+                    result = await super().save_model(id, payload)
+                    
+                    # 保存后验证并修复 - 确保 original_url 真的被保存到数据库
+                    if result and "id" in result:
+                        saved_photo = await self.model.get(id=result["id"])
+                        print(f"保存后的photo.original_url: {saved_photo.original_url}, photo.preview_url: {saved_photo.preview_url}")
+                        
+                        # 如果保存后 original_url 为空或默认值，但有 preview_url，直接更新数据库
+                        if saved_photo.preview_url and (
+                            not saved_photo.original_url or
+                            saved_photo.original_url == [] or
+                            saved_photo.original_url == ["/static/default.png"] or
+                            saved_photo.original_url == "/static/default.png"
+                        ):
+                            saved_photo.original_url = [saved_photo.preview_url]
+                            await saved_photo.save()
+                            print(f"保存后修复: 更新了 photo.original_url 为 {saved_photo.original_url}")
+                    
+                    return result
                 
                 processed_files = []
                 for file in files:
