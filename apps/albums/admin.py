@@ -427,14 +427,24 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 if os.path.exists(cover_path):
                     os.remove(cover_path)
                 
-                # 构造并删除预览图
-                preview_path = cover_path.replace('/uploads/', '/uploads/preview/')
+                # 构造并删除预览图和缩略图
+                # 从URL中提取文件名部分
+                file_name = os.path.basename(album.cover_image)
+                base_name = os.path.splitext(file_name)[0]
+                dir_name = os.path.dirname(cover_path)
+                
+                # 删除预览图
+                preview_filename = f"{base_name}_preview.jpg"
+                preview_path = os.path.join(dir_name, preview_filename)
                 if os.path.exists(preview_path):
+                    print(f"删除预览图文件: {preview_path}")
                     os.remove(preview_path)
                 
-                # 构造并删除缩略图
-                thumbnail_path = cover_path.replace('/uploads/', '/uploads/thumbnail/')
+                # 删除缩略图
+                thumbnail_filename = f"{base_name}_thumbnail.jpg"
+                thumbnail_path = os.path.join(dir_name, thumbnail_filename)
                 if os.path.exists(thumbnail_path):
+                    print(f"删除缩略图文件: {thumbnail_path}")
                     os.remove(thumbnail_path)
             
             # 获取相册下的所有照片
@@ -442,29 +452,110 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             
             # 删除每张照片的文件
             for photo in photos:
-                # 删除原图
-                if isinstance(photo.original_url, list):
-                    for url in photo.original_url:
-                        if url.startswith('/static/uploads/'):
-                            file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                elif isinstance(photo.original_url, str) and photo.original_url.startswith('/static/uploads/'):
-                    file_path = os.path.join(settings.STATIC_DIR, photo.original_url.replace('/static/', ''))
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-            
-            # 删除缩略图1
-            if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
-                thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
-                if os.path.exists(thumbnail_path):
-                    os.remove(thumbnail_path)
-            
-            # 删除预览图
-            if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):
-                preview_path = os.path.join(settings.STATIC_DIR, photo.preview_url.replace('/static/', ''))
-                if os.path.exists(preview_path):
-                    os.remove(preview_path)
+                # 删除原图 - 处理original_url可能是列表、字符串或其他类型的情况
+                try:
+                    if isinstance(photo.original_url, list):
+                        for url in photo.original_url:
+                            if isinstance(url, str) and url.startswith('/static/uploads/'):
+                                file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
+                                if os.path.exists(file_path):
+                                    print(f"删除照片原图文件: {file_path}")
+                                    os.remove(file_path)
+                                
+                                # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
+                                file_name = os.path.basename(url)
+                                if "_preview" in file_name or "_thumbnail" in file_name:
+                                    base_name = file_name.split("_")[0]
+                                    photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                                    for f in os.listdir(photos_dir):
+                                        if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                            original_file_path = os.path.join(photos_dir, f)
+                                            if os.path.exists(original_file_path):
+                                                print(f"删除关联的原始图片文件: {original_file_path}")
+                                                os.remove(original_file_path)
+                    elif isinstance(photo.original_url, str) and photo.original_url.startswith('/static/uploads/'):
+                        file_path = os.path.join(settings.STATIC_DIR, photo.original_url.replace('/static/', ''))
+                        if os.path.exists(file_path):
+                            print(f"删除照片原图文件: {file_path}")
+                            os.remove(file_path)
+                        
+                        # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
+                        file_name = os.path.basename(photo.original_url)
+                        if "_preview" in file_name or "_thumbnail" in file_name:
+                            base_name = file_name.split("_")[0]
+                            photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                            for f in os.listdir(photos_dir):
+                                if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                    original_file_path = os.path.join(photos_dir, f)
+                                    if os.path.exists(original_file_path):
+                                        print(f"删除关联的原始图片文件: {original_file_path}")
+                                        os.remove(original_file_path)
+                    elif isinstance(photo.original_url, dict):
+                        # 处理可能是字典的情况
+                        for key, url in photo.original_url.items():
+                            if isinstance(url, str) and url.startswith('/static/uploads/'):
+                                file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
+                                if os.path.exists(file_path):
+                                    print(f"删除照片原图文件(dict): {file_path}")
+                                    os.remove(file_path)
+                                
+                                # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
+                                file_name = os.path.basename(url)
+                                if "_preview" in file_name or "_thumbnail" in file_name:
+                                    base_name = file_name.split("_")[0]
+                                    photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                                    for f in os.listdir(photos_dir):
+                                        if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                            original_file_path = os.path.join(photos_dir, f)
+                                            if os.path.exists(original_file_path):
+                                                print(f"删除关联的原始图片文件: {original_file_path}")
+                                                os.remove(original_file_path)
+                except Exception as e:
+                    print(f"删除照片原图文件时出错: {str(e)}")
+                
+                # 删除缩略图
+                try:
+                    if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
+                        thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
+                        if os.path.exists(thumbnail_path):
+                            print(f"删除照片缩略图文件: {thumbnail_path}")
+                            os.remove(thumbnail_path)
+                        
+                        # 检查并删除可能存在的原始图片
+                        file_name = os.path.basename(photo.thumbnail_url)
+                        if "_thumbnail" in file_name:
+                            base_name = file_name.split("_")[0]
+                            photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                            for f in os.listdir(photos_dir):
+                                if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                    original_file_path = os.path.join(photos_dir, f)
+                                    if os.path.exists(original_file_path):
+                                        print(f"删除关联的原始图片文件: {original_file_path}")
+                                        os.remove(original_file_path)
+                except Exception as e:
+                    print(f"删除照片缩略图文件时出错: {str(e)}")
+                
+                # 删除预览图
+                try:
+                    if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):
+                        preview_path = os.path.join(settings.STATIC_DIR, photo.preview_url.replace('/static/', ''))
+                        if os.path.exists(preview_path):
+                            print(f"删除照片预览图文件: {preview_path}")
+                            os.remove(preview_path)
+                        
+                        # 检查并删除可能存在的原始图片
+                        file_name = os.path.basename(photo.preview_url)
+                        if "_preview" in file_name:
+                            base_name = file_name.split("_")[0]
+                            photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                            for f in os.listdir(photos_dir):
+                                if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                    original_file_path = os.path.join(photos_dir, f)
+                                    if os.path.exists(original_file_path):
+                                        print(f"删除关联的原始图片文件: {original_file_path}")
+                                        os.remove(original_file_path)
+                except Exception as e:
+                    print(f"删除照片预览图文件时出错: {str(e)}")
             
             # 删除相册记录（这会级联删除所有关联的照片记录）
             return await super().delete_model(id)
