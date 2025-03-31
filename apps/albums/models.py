@@ -81,16 +81,16 @@ class Photo(models.Model):
         data = await super().to_dict(**kwargs)
         
         # 如果有缩略图但original_url为空或默认值，使用缩略图
-        if self.thumbnail_url and (
-            not self.original_url or 
-            self.original_url == [] or
-            self.original_url == ["/static/default.png"] or 
-            self.original_url == "/static/default.png"
-        ):
-            data["original_url"] = [self.thumbnail_url]
+        # if self.thumbnail_url and (
+        #     not self.original_url or 
+        #     self.original_url == [] or
+        #     self.original_url == ["/static/default.png"] or 
+        #     self.original_url == "/static/default.png"
+        # ):
+        #     data["original_url"] = [self.thumbnail_url]
             
-            # 同时更新模型字段值
-            self.original_url = [self.thumbnail_url]
-            await self.save(update_fields=["original_url"])
+        #     # 同时更新模型字段值
+        #     self.original_url = [self.thumbnail_url]
+        #     await self.save(update_fields=["original_url"])
             
         return data

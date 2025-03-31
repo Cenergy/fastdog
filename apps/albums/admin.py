@@ -901,14 +901,14 @@ class PhotoModelAdmin(CustomModelAdmin):
         if "original_url" not in payload or payload["original_url"] is None:
             payload["original_url"] = ["/static/default.png"]
         
-        # 处理缩略图和原图URL的关系
-        if "thumbnail_url" in payload and payload["thumbnail_url"] and (
+        # 处理预览图和原图URL的关系
+        if "preview_url" in payload and payload["preview_url"] and (
             not payload["original_url"] or 
             payload["original_url"] == ["/static/default.png"] or 
             payload["original_url"] == "/static/default.png"):
-            # 如果有缩略图但原图为空或默认值，使用缩略图作为原图
-            payload["original_url"] = [payload["thumbnail_url"]]
-            print("图片处理：使用缩略图作为原图URL")
+            # 如果有预览图但原图为空或默认值，使用预览图作为原图
+            payload["original_url"] = [payload["preview_url"]]
+            print("图片处理：使用预览图作为原图URL")
         
         return payload
 
@@ -934,11 +934,11 @@ class PhotoModelAdmin(CustomModelAdmin):
             # 处理现有记录的修改（id存在）
             if id:
                 existing = await Photo.get_or_none(id=id)
-                if existing and existing.thumbnail_url:
-                    # 如果原图URL为空或是默认值，使用现有的缩略图URL
+                if existing and existing.preview_url:
+                    # 如果原图URL为空或是默认值，使用现有的预览图URL
                     if not payload.get("original_url") or payload.get("original_url") == [] or payload.get("original_url") == ["/static/default.png"]:
-                        payload["original_url"] = [existing.thumbnail_url]
-                        print(f"修改保存：使用现有缩略图作为原图URL: {existing.thumbnail_url}")
+                        payload["original_url"] = [existing.preview_url]
+                        print(f"修改保存：使用现有预览图作为原图URL: {existing.preview_url}")
 
             # 标准化payload数据
             payload = self.normalize_payload(payload)
@@ -987,8 +987,8 @@ class PhotoModelAdmin(CustomModelAdmin):
                         try:
                             # 确保必需字段存在
                             if not file_payload.get("original_url"):
-                                if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
-                                    file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                                if "preview_url" in file_payload and file_payload["preview_url"]:
+                                    file_payload["original_url"] = [file_payload["preview_url"]]
                                 else:
                                     file_payload["original_url"] = ["/static/default.png"]
                             
@@ -1008,8 +1008,8 @@ class PhotoModelAdmin(CustomModelAdmin):
                     file_payload = processed_files[0]
                     # 确保必需字段存在
                     if not file_payload.get("original_url"):
-                        if "thumbnail_url" in file_payload and file_payload["thumbnail_url"]:
-                            file_payload["original_url"] = [file_payload["thumbnail_url"]]
+                        if "preview_url" in file_payload and file_payload["preview_url"]:
+                            file_payload["original_url"] = [file_payload["preview_url"]]
                         else:
                             file_payload["original_url"] = ["/static/default.png"]
                     
@@ -1021,9 +1021,9 @@ class PhotoModelAdmin(CustomModelAdmin):
             
             # 保存前再次确保important字段有值
             if not payload.get("original_url"):
-                # 如果有缩略图但没有原图，使用缩略图作为原图
-                if "thumbnail_url" in payload and payload["thumbnail_url"]:
-                    payload["original_url"] = [payload["thumbnail_url"]]
+                # 如果有预览图但没有原图，使用预览图作为原图
+                if "preview_url" in payload and payload["preview_url"]:
+                    payload["original_url"] = [payload["preview_url"]]
                 else:
                     payload["original_url"] = ["/static/default.png"]
             
@@ -1036,16 +1036,16 @@ class PhotoModelAdmin(CustomModelAdmin):
                 # 保存后验证并修复 - 确保 original_url 真的被保存到数据库
                 if result and "id" in result:
                     saved_photo = await self.model.get(id=result["id"])
-                    print(f"保存后的photo.original_url: {saved_photo.original_url}, photo.thumbnail_url: {saved_photo.thumbnail_url}")
+                    print(f"保存后的photo.original_url: {saved_photo.original_url}, photo.preview_url: {saved_photo.preview_url}")
                     
-                    # 如果保存后 original_url 为空或默认值，但有 thumbnail_url，直接更新数据库
-                    if saved_photo.thumbnail_url and (
+                    # 如果保存后 original_url 为空或默认值，但有 preview_url，直接更新数据库
+                    if saved_photo.preview_url and (
                         not saved_photo.original_url or
                         saved_photo.original_url == [] or
                         saved_photo.original_url == ["/static/default.png"] or
                         saved_photo.original_url == "/static/default.png"
                     ):
-                        saved_photo.original_url = [saved_photo.thumbnail_url]
+                        saved_photo.original_url = [saved_photo.preview_url]
                         await saved_photo.save()
                         print(f"保存后修复: 更新了 photo.original_url 为 {saved_photo.original_url}")
                 
