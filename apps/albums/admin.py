@@ -1059,6 +1059,65 @@ class PhotoModelAdmin(CustomModelAdmin):
                     # 当修改现有照片并上传多张图片时，使用第一张图片更新当前照片
                     # 并为其余图片创建新记录
                     results = []
+                    
+                    # 获取现有照片对象，用于删除旧文件
+                    existing_photo = await Photo.get_or_none(id=id)
+                    if existing_photo:
+                        # 删除原图
+                        if existing_photo.original_url:
+                            if isinstance(existing_photo.original_url, list):
+                                for url in existing_photo.original_url:
+                                    if url.startswith('/static/uploads/'):
+                                        # 处理原始图片路径
+                                        file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
+                                        if os.path.exists(file_path):
+                                            print(f"删除旧的原始图片文件: {file_path}")
+                                            os.remove(file_path)
+                                        
+                                        # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
+                                        file_name = os.path.basename(url)
+                                        if "_preview" in file_name or "_thumbnail" in file_name:
+                                            base_name = file_name.split("_")[0]
+                                            photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                                            for f in os.listdir(photos_dir):
+                                                if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                                    original_file_path = os.path.join(photos_dir, f)
+                                                    if os.path.exists(original_file_path):
+                                                        print(f"删除旧的关联原始图片文件: {original_file_path}")
+                                                        os.remove(original_file_path)
+                            elif isinstance(existing_photo.original_url, str) and existing_photo.original_url.startswith('/static/uploads/'):
+                                # 处理原始图片路径
+                                file_path = os.path.join(settings.STATIC_DIR, existing_photo.original_url.replace('/static/', ''))
+                                if os.path.exists(file_path):
+                                    print(f"删除旧的原始图片文件: {file_path}")
+                                    os.remove(file_path)
+                                
+                                # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
+                                file_name = os.path.basename(existing_photo.original_url)
+                                if "_preview" in file_name or "_thumbnail" in file_name:
+                                    base_name = file_name.split("_")[0]
+                                    photos_dir = os.path.join(settings.STATIC_DIR, "uploads", "photos")
+                                    for f in os.listdir(photos_dir):
+                                        if f.startswith(base_name) and not ("_preview" in f or "_thumbnail" in f):
+                                            original_file_path = os.path.join(photos_dir, f)
+                                            if os.path.exists(original_file_path):
+                                                print(f"删除旧的关联原始图片文件: {original_file_path}")
+                                                os.remove(original_file_path)
+                        
+                        # 删除缩略图
+                        if existing_photo.thumbnail_url and existing_photo.thumbnail_url.startswith('/static/uploads/'):
+                            thumbnail_path = os.path.join(settings.STATIC_DIR, existing_photo.thumbnail_url.replace('/static/', ''))
+                            if os.path.exists(thumbnail_path):
+                                print(f"删除旧的缩略图文件: {thumbnail_path}")
+                                os.remove(thumbnail_path)
+                        
+                        # 删除预览图
+                        if existing_photo.preview_url and existing_photo.preview_url.startswith('/static/uploads/'):
+                            preview_path = os.path.join(settings.STATIC_DIR, existing_photo.preview_url.replace('/static/', ''))
+                            if os.path.exists(preview_path):
+                                print(f"删除旧的预览图文件: {preview_path}")
+                                os.remove(preview_path)
+                    
                     # 处理第一张图片 - 更新当前照片
                     first_file = files[0]
                     single_payload = payload.copy()
@@ -1220,7 +1279,7 @@ class PhotoModelAdmin(CustomModelAdmin):
                             # 处理原始图片路径
                             file_path = os.path.join(settings.STATIC_DIR, url.replace('/static/', ''))
                             if os.path.exists(file_path):
-                                print(f"删除原始图片文件: {file_path}")
+                                print(f"删除旧的原始图片文件: {file_path}")
                                 os.remove(file_path)
                             
                             # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
@@ -1243,7 +1302,7 @@ class PhotoModelAdmin(CustomModelAdmin):
                     # 处理原始图片路径
                     file_path = os.path.join(settings.STATIC_DIR, photo.original_url.replace('/static/', ''))
                     if os.path.exists(file_path):
-                        print(f"删除原始图片文件: {file_path}")
+                        print(f"删除旧的原始图片文件: {file_path}")
                         os.remove(file_path)
                     
                     # 检查并删除可能存在的原始图片（不带_preview或_thumbnail后缀）
@@ -1262,7 +1321,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
                 thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
                 if os.path.exists(thumbnail_path):
-                    print(f"删除缩略图文件: {thumbnail_path}")
+                    print(f"删除旧的缩略图文件: {thumbnail_path}")
                     os.remove(thumbnail_path)
                 
                 # 检查并删除可能存在的原始图片
