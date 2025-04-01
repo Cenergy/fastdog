@@ -1,6 +1,8 @@
 from tortoise import fields, models
 from enum import Enum
 from apps.tasks.models import TaskStatus
+from core.constants import ProviderType
+
 
 
 class ImageSize(str, Enum):
@@ -14,6 +16,35 @@ class ImageSize(str, Enum):
     landscape_small= "768*512"
     landscape_medium= "1024*768"
     landscape_large= "1536*1024"
+    
+    @property
+    def width(self) -> int:
+        """获取宽度"""
+        return int(self.value.split("*")[0])
+    
+    @property
+    def height(self) -> int:
+        """获取高度"""
+        return int(self.value.split("*")[1])
+    
+    @classmethod
+    def from_dimensions(cls, width: int, height: int) -> 'ImageSize':
+        """根据宽高创建尺寸枚举
+        
+        Args:
+            width: 图片宽度
+            height: 图片高度
+            
+        Returns:
+            最接近的标准尺寸枚举
+        """
+        size_str = f"{width}*{height}"
+        for size in cls:
+            if size.value == size_str:
+                return size
+        raise ValueError(f"No matching size for {size_str}")
+
+
 
 class ImageGenerationTask(models.Model):
     """图片生成任务模型
@@ -29,6 +60,7 @@ class ImageGenerationTask(models.Model):
     """
     id = fields.UUIDField(pk=True, description="任务唯一标识符")
     prompt = fields.TextField(description="图片生成的提示词描述")
+    model_type = fields.CharEnumField(ImageGenerationType, description="生成模型类型", default=ImageGenerationType.WANX)
     model_params = fields.JSONField(null=True, description="模型参数配置，如图片大小、生成数量等")
     size = fields.CharEnumField(ImageSize, description="图片大小", default=ImageSize.landscape_medium)
     result_path = fields.CharField(max_length=255, null=True, description="生成图片的存储路径")

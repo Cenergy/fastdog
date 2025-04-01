@@ -9,9 +9,6 @@ from apps.ideas.genImage import ImageGenerator, get_supported_sizes
 def test_wanx_generation():
     """测试通义万相图片生成"""
     # 确保设置了环境变量
-    if not os.environ.get("DASHSCOPE_API_KEY"):
-        print("请先设置DASHSCOPE_API_KEY环境变量")
-        return
     
     # 文本提示
     prompt = '画一张大数据平台技术架构图'
@@ -63,7 +60,7 @@ if __name__ == '__main__':
     test_different_sizes()
     
     # 根据需要取消注释以下测试
-    # test_wanx_generation()
+    test_wanx_generation()
     # test_hf_generation()
     
     print("\n提示: 要使用通义万相API，请设置环境变量 DASHSCOPE_API_KEY")
