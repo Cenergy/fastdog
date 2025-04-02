@@ -23,10 +23,6 @@ CACHE_TTL_LONG = 86400  # 24小时
 API_RATE_LIMIT = 100  # 每分钟请求次数限制
 API_TIMEOUT = 30  # API超时时间（秒）
 
-# 图片生成服务类型枚举
-class ImageGenerationType(Enum):
-    WANX = "wx"
-    HUGGINGFACE = "hf"
 
 # 文件上传相关常量
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB

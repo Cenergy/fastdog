@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
     DEFAULT_ADMIN_USERNAME: str = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+    
+    # AI生成服务配置
+    DASHSCOPE_API_KEY: Optional[str] = None  # 通义万相API密钥
+    HUGGINGFACE_API_KEY: Optional[str] = None  # HuggingFace API密钥
 
     class Config:
         case_sensitive = True

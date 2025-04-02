@@ -7,7 +7,10 @@ import dashscope
 from dashscope import ImageSynthesis
 from enum import Enum
 
-from core.constants import ProviderType
+# 图片生成服务类型枚举
+class ImageGenerationType(Enum):
+    WANX = "wx"
+    HUGGINGFACE = "hf"
 
 class ImageGenerator:
     """
@@ -29,12 +32,12 @@ class ImageGenerator:
         ... )
     """
     
-    def __init__(self, provider=ProviderType.WANX, default_size="1024*768"):
+    def __init__(self, provider=ImageGenerationType.WANX.value, default_size="1024*768"):
         """
         初始化图片生成器
         
         参数:
-            provider (ProviderType): 图片生成服务提供商，默认为通义万相
+            provider (ImageGenerationType): 图片生成服务提供商，默认为通义万相
             default_size (str): 默认图片尺寸，格式为"宽*高"或"宽x高"
         
         异常:
@@ -52,14 +55,14 @@ class ImageGenerator:
         
         根据provider类型设置对应的API密钥
         """
-        if self.provider == ProviderType.WANX:
+        if self.provider == ImageGenerationType.WANX.value:
             self.api_key = os.environ.get("DASHSCOPE_API_KEY")
             if not self.api_key:
                 raise ValueError(
                     "请设置DASHSCOPE_API_KEY环境变量以使用通义万相服务"
                 )
             dashscope.api_key = self.api_key
-        elif self.provider == ProviderType.HUGGINGFACE:
+        elif self.provider == ImageGenerationType.HUGGINGFACE.value:
             self.api_key = os.environ.get("HF_API_KEY")
             if not self.api_key:
                 raise ValueError(
@@ -101,9 +104,9 @@ class ImageGenerator:
             processed_size = self._process_size_parameter(size)
             
             # 根据provider选择生成方法
-            if self.provider == ProviderType.WANX:
+            if self.provider == ImageGenerationType.WANX:
                 return self._generate_with_wanx(prompt, output_dir, n, processed_size, **kwargs)
-            elif self.provider == ProviderType.HUGGINGFACE:
+            elif self.provider == ImageGenerationType.HUGGINGFACE:
                 return self._generate_with_huggingface(prompt, output_dir, n, processed_size, **kwargs)
             
         except Exception as e:

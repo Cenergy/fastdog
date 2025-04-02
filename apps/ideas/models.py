@@ -1,12 +1,20 @@
 from tortoise import fields, models
 from enum import Enum
 from apps.tasks.models import TaskStatus
-from core.constants import ProviderType
+
+# 图片生成服务类型枚举
+class ImageGenerationType(Enum):
+    WANX = "wx"
+    HUGGINGFACE = "hf"
 
 
 
 class ImageSize(str, Enum):
-    """转换器类型枚举"""
+    """图片尺寸枚举
+    
+    支持常见的图片尺寸格式，包括正方形、纵向和横向三种类型
+    每个枚举值格式为"宽度*高度"的字符串
+    """
     square_small="512*512"
     square_medium= "768*768"
     square_large="1024*1024"
@@ -43,6 +51,33 @@ class ImageSize(str, Enum):
             if size.value == size_str:
                 return size
         raise ValueError(f"No matching size for {size_str}")
+    
+    def __str__(self) -> str:
+        """返回枚举值的字符串表示"""
+        return self.value
+    
+    @classmethod
+    def _missing_(cls, value):
+        """处理未找到的枚举值
+        
+        当尝试通过值获取枚举但值不存在时调用此方法
+        可以实现自定义的值转换逻辑
+        """
+        if isinstance(value, str):
+            # 尝试查找匹配的尺寸
+            for size in cls:
+                if size.value == value:
+                    return size
+        return None
+        
+    def __eq__(self, other):
+        """自定义相等比较方法
+        
+        支持与字符串直接比较
+        """
+        if isinstance(other, str):
+            return self.value == other
+        return super().__eq__(other)
 
 
 
