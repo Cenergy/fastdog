@@ -1,12 +1,7 @@
 from tortoise import fields, models
 from enum import Enum
 from apps.tasks.models import TaskStatus
-
-# 图片生成服务类型枚举
-class ImageGenerationType(Enum):
-    WANX = "wx"
-    HUGGINGFACE = "hf"
-
+from .genImage import ImageGenerationType
 
 
 class ImageSize(str, Enum):
@@ -15,15 +10,10 @@ class ImageSize(str, Enum):
     支持常见的图片尺寸格式，包括正方形、纵向和横向三种类型
     每个枚举值格式为"宽度*高度"的字符串
     """
-    square_small="512*512"
-    square_medium= "768*768"
     square_large="1024*1024"
-    portrait_small= "512*768"
-    portrait_medium= "768*1024"
-    portrait_large= "1024*1536"
-    landscape_small= "768*512"
-    landscape_medium= "1024*768"
-    landscape_large= "1536*1024"
+    portrait_medium= "720*1280"
+    portrait_large= "1280*720"
+    landscape_medium= "768*1152"
     
     @property
     def width(self) -> int:

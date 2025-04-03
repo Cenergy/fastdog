@@ -104,9 +104,9 @@ class ImageGenerator:
             processed_size = self._process_size_parameter(size)
             
             # 根据provider选择生成方法
-            if self.provider == ImageGenerationType.WANX:
+            if self.provider == ImageGenerationType.WANX.value:
                 return self._generate_with_wanx(prompt, output_dir, n, processed_size, **kwargs)
-            elif self.provider == ImageGenerationType.HUGGINGFACE:
+            elif self.provider == ImageGenerationType.HUGGINGFACE.value:
                 return self._generate_with_huggingface(prompt, output_dir, n, processed_size, **kwargs)
             
         except Exception as e:
@@ -173,14 +173,32 @@ class ImageGenerator:
         """
         
         try:
+            # 记录API调用参数
+            print(f'[INFO] 调用通义万相API，参数：prompt={prompt}, n={n}, size={size}, kwargs={kwargs}')
+            
+            # 验证必要参数
+            if not prompt or not isinstance(prompt, str):
+                return {
+                    'status': 'failed',
+                    'error_message': f'无效的prompt参数: {prompt}'
+                }
+            
             # 调用通义万相API
-            rsp = ImageSynthesis.call(
-                model=ImageSynthesis.Models.wanx_v1,
-                prompt=prompt,
-                n=n,
-                size=size,
-                **kwargs
-            )
+            try:
+                rsp = ImageSynthesis.call(
+                    model=ImageSynthesis.Models.wanx_v1,
+                    prompt=prompt,
+                    n=n,
+                    size=size,
+                    **kwargs
+                )
+            except Exception as e:
+                error_msg = f'通义万相API调用异常: {str(e)}'
+                print(f'[ERROR] {error_msg}')
+                return {
+                    'status': 'failed',
+                    'error_message': error_msg
+                }
             
             # 处理API响应
             if rsp.status_code == HTTPStatus.OK:

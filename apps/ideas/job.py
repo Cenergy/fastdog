@@ -73,12 +73,12 @@ async def _process_task(task: ImageGenerationTask):
             # 使用通义万相生成
             if not settings.DASHSCOPE_API_KEY:
                 raise ValueError("未配置通义万相API密钥，请在环境变量中设置DASHSCOPE_API_KEY")
-            provider_type = "WANX"
+            provider_type = ImageGenerationType.WANX.value
         elif task.model_type == ImageGenerationType.HUGGINGFACE:
             # 使用HuggingFace生成
             if not settings.HUGGINGFACE_API_KEY:
                 raise ValueError("未配置HuggingFace API密钥，请在环境变量中设置HUGGINGFACE_API_KEY")
-            provider_type = "HUGGINGFACE"
+            provider_type = ImageGenerationType.HUGGINGFACE.value
         else:
             raise ValueError(f"不支持的模型类型: {task.model_type}")
         
@@ -88,12 +88,20 @@ async def _process_task(task: ImageGenerationTask):
         # 准备生成参数
         generation_params = task.model_params or {}
         
+        # 确保基本参数存在且正确
+        if task.size:
+            generation_params['size'] = str(task.size)
+        
+        # 设置默认参数
+        if 'n' not in generation_params:
+            generation_params['n'] = 1  # 默认生成1张图片
+        
+        print(generation_params)
+        print(task.prompt,"=========================================")
         # 调用生成器生成图片
         result = generator.generate(
             prompt=task.prompt,
             output_dir=str(output_dir),
-            n=1,  # 默认生成1张图片
-            size=str(task.size) if task.size else None,
             **generation_params
         )
         
