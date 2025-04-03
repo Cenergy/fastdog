@@ -8,7 +8,7 @@ class TaskModelAdmin(TortoiseModelAdmin):
     model = Task
     icon = "clock"
     display_name = "任务管理"
-    list_display = ["id", "name", "task_type", "status", "is_active", "next_run_time", "last_run_time", "created_at"]
+    list_display = ["id", "name", "task_type", "is_active","status", "next_run_time", "last_run_time", "created_at"]
     list_display_links = ["id", "name"]
     list_filter = ["task_type", "status", "is_active", "created_at"]
     search_fields = ["name", "description", "func_path"]

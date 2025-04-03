@@ -57,6 +57,11 @@ class TaskScheduler:
     async def add_task(self, task: Task) -> bool:
         """添加任务到调度器"""
         try:
+            # 检查任务是否处于激活状态
+            if not task.is_active:
+                logger.info(f"Task {task.name} is not active, skipping")
+                return False
+
             # 导入任务函数
             module_path, func_name = task.func_path.rsplit('.', 1)
             module = importlib.import_module(module_path)
@@ -145,10 +150,27 @@ class TaskScheduler:
         try:
             # 先移除旧任务
             await self.remove_task(str(task.id))
-            # 添加新任务
-            return await self.add_task(task)
+            # 根据is_active状态决定是否添加新任务
+            if task.is_active:
+                return await self.add_task(task)
+            else:
+                logger.info(f"Task {task.name} is not active, not adding to scheduler")
+                return True
         except Exception as e:
             logger.error(f"Failed to modify task {task.name}: {str(e)}")
+            return False
+
+    async def update_task_active_status(self, task: Task) -> bool:
+        """更新任务的激活状态"""
+        try:
+            if task.is_active:
+                # 如果任务变为激活状态，尝试添加到调度器
+                return await self.add_task(task)
+            else:
+                # 如果任务变为非激活状态，从调度器中移除
+                return await self.remove_task(str(task.id))
+        except Exception as e:
+            logger.error(f"Failed to update task active status for {task.name}: {str(e)}")
             return False
 
 # 创建全局调度器实例
