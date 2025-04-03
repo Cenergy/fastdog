@@ -1,4 +1,5 @@
-from fastadmin import TortoiseModelAdmin, register, action, display
+from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
+from tortoise.fields import CharField
 from .models import Task, TaskStatus
 from .scheduler import scheduler
 
@@ -13,6 +14,15 @@ class TaskModelAdmin(TortoiseModelAdmin):
     search_fields = ["name", "description", "func_path"]
     list_per_page = 15
     ordering = ["-created_at"]
+    readonly_fields = ["status"]
+    
+    form_fields = {
+        "status": CharField(max_length=200, description="任务状态", required=False, choices=[(status.value, status.value) for status in TaskStatus]),
+    }
+    
+    formfield_overrides = {
+        "status": (WidgetType.Select, {"disabled": True})
+    }
     
     @action(description="暂停任务")
     async def pause(self, request, queryset):
