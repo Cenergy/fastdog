@@ -27,6 +27,13 @@ class UserModelAdmin(TortoiseModelAdmin):
     async def save_model(self, id: int | None, payload: dict) -> dict | None:
         if "hashed_password" in payload:
             payload["hashed_password"] = get_password_hash(payload.pop("hashed_password"))
+        
+        # 如果是新建用户（id为None），则直接使用create_user函数创建
+        # 并标记为管理后台创建，允许设置email_verified为True
+        if id is None:
+            from .crud import create_user
+            user = await create_user(payload, is_admin_creation=True)
+            return user.model_dump()
         return await super().save_model(id, payload)
     
     async def change_password(self, user_id: int, password: str) -> bool:

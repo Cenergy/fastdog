@@ -40,7 +40,7 @@ async def init_db():
                 "email_verified": True,
                 "role": "admin"
             }
-            await create_user(admin_data)
+            await create_user(admin_data, is_admin_creation=True)
             logger.info("默认管理员账户创建成功")
         else:
             logger.info("默认管理员账户已存在，跳过创建")

@@ -57,7 +57,7 @@ async def get_user_by_verification_token(token: str):
     except DoesNotExist:
         return None
 
-async def create_user(user_data):
+async def create_user(user_data, is_admin_creation=False):
     try:
         # 检查是否为Pydantic模型实例，如果是则转换为字典
         if hasattr(user_data, 'model_dump'):
@@ -68,6 +68,15 @@ async def create_user(user_data):
                 user_dict['hashed_password'] = get_password_hash(password)  # 添加哈希后的密码
         else:
             user_dict = user_data
+        
+        # 根据创建来源设置email_verified
+        # 如果是管理后台创建（超级用户），允许直接设置email_verified为True
+        # 如果是API创建，强制设置email_verified为False，确保用户必须通过邮箱验证
+        if not is_admin_creation:
+            user_dict['email_verified'] = False
+        elif 'email_verified' not in user_dict:
+            # 管理后台创建但未指定email_verified时，默认设为True
+            user_dict['email_verified'] = True
         
         user_obj = await User.create(**user_dict)
         return await User_Pydantic.from_tortoise_orm(user_obj)
