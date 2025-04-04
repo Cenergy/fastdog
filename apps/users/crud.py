@@ -57,8 +57,18 @@ async def get_user_by_verification_token(token: str):
     except DoesNotExist:
         return None
 
-async def create_user(user_dict: dict):
+async def create_user(user_data):
     try:
+        # 检查是否为Pydantic模型实例，如果是则转换为字典
+        if hasattr(user_data, 'model_dump'):
+            user_dict = user_data.model_dump()
+            # 如果是UserCreate，需要处理密码字段
+            if 'password' in user_dict:
+                password = user_dict.pop('password')  # 从字典中移除密码
+                user_dict['hashed_password'] = get_password_hash(password)  # 添加哈希后的密码
+        else:
+            user_dict = user_data
+        
         user_obj = await User.create(**user_dict)
         return await User_Pydantic.from_tortoise_orm(user_obj)
     except IntegrityError:

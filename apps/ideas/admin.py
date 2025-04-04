@@ -3,6 +3,7 @@ from tortoise.fields import CharField, TextField, JSONField
 from .models import ImageGenerationTask
 from apps.tasks.models import TaskStatus
 from typing import Dict, Any, List
+from fastapi import BackgroundTasks
 
 @register(ImageGenerationTask)
 class ImageGenerationTaskAdmin(TortoiseModelAdmin):
@@ -55,7 +56,14 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
         return True
     
     async def save_model(self, id: str | None, payload: Dict[str, Any]) -> Dict[str, Any] | None:
-        """保存前的处理"""
+        """保存前的处理
+        
+        Args:
+            id: 任务ID，新建任务时为None
+            payload: 任务数据
+        Returns:
+            保存后的任务数据
+        """
         if not id:
             # 新任务默认为等待状态
             payload["status"] = TaskStatus.PENDING
@@ -66,8 +74,21 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
         if result and not id:  # 只在创建新任务时执行
             # 获取保存后的任务实例
             task = await self.model.get(id=result["id"])
-            # 执行图片生成任务
-            await self.execute_generation_task(task)
+            
+            # 使用BackgroundTasks异步执行任务
+            from fastapi import BackgroundTasks
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"准备提交任务 {task.id} 到后台任务")
+            
+            # 获取当前请求的BackgroundTasks实例
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(self.execute_generation_task, task)
+            logger.info(f"任务 {task.id} 已添加到后台任务")
+            
+            # 确保返回结果中包含background_tasks
+            if isinstance(result, dict):
+                result["background_tasks"] = background_tasks
             
         return result
         
@@ -77,6 +98,7 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
         Args:
             task: 图片生成任务实例
         """
+        print(f"开始执行任务: {task.id}")
         from .genImage import ImageGenerator, ImageGenerationType
         import os
         from pathlib import Path
