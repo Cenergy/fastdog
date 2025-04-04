@@ -32,7 +32,7 @@ class UserModelAdmin(TortoiseModelAdmin):
         # 并标记为管理后台创建，允许设置email_verified为True
         if id is None:
             from .crud import create_user
-            user = await create_user(payload, is_admin_creation=True)
+            user = await create_user(payload, is_admin_creation=False)
             return user.model_dump()
         return await super().save_model(id, payload)
     
