@@ -3,7 +3,8 @@ from tortoise.fields import CharField, TextField, JSONField
 from .models import ImageGenerationTask
 from apps.tasks.models import TaskStatus
 from typing import Dict, Any, List
-from fastapi import BackgroundTasks
+import asyncio
+from starlette.concurrency import run_in_threadpool
 
 @register(ImageGenerationTask)
 class ImageGenerationTaskAdmin(TortoiseModelAdmin):
@@ -75,22 +76,56 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
             # 获取保存后的任务实例
             task = await self.model.get(id=result["id"])
             
-            # 使用BackgroundTasks异步执行任务
-            from fastapi import BackgroundTasks
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"准备提交任务 {task.id} 到后台任务")
+            logger.info(f"准备提交任务 {task.id} 到异步队列")
             
-            # 获取当前请求的BackgroundTasks实例
-            background_tasks = BackgroundTasks()
-            background_tasks.add_task(self.execute_generation_task, task)
-            logger.info(f"任务 {task.id} 已添加到后台任务")
+            # 使用一个单独的函数来启动异步任务，确保表单立即返回
+            # 不使用asyncio.create_task，因为它可能会导致FastAdmin框架等待任务完成
+            from concurrent.futures import ThreadPoolExecutor
+            import asyncio
             
-            # 确保返回结果中包含background_tasks
-            if isinstance(result, dict):
-                result["background_tasks"] = background_tasks
+            # 创建一个执行器来运行异步任务
+            executor = ThreadPoolExecutor(max_workers=1)
+            
+            # 提交任务到线程池，确保不阻塞当前请求
+            def start_task():
+                # 创建一个新的事件循环来运行异步任务
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    # 在新的事件循环中运行任务
+                    loop.run_until_complete(self.execute_generation_task(task))
+                finally:
+                    loop.close()
+            
+            # 在线程池中启动任务
+            executor.submit(start_task)
+            executor.shutdown(wait=False)  # 不等待任务完成
+            
+            logger.info(f"任务 {task.id} 已提交到线程池执行")
             
         return result
+        
+    async def _run_task_in_threadpool(self, task: ImageGenerationTask) -> None:
+        """在线程池中执行任务
+        
+        Args:
+            task: 图片生成任务实例
+        """
+        # 不应该使用run_in_threadpool执行异步函数，直接调用异步函数
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"开始执行任务 {task.id}")
+        try:
+            await self.execute_generation_task(task)
+            logger.info(f"任务 {task.id} 执行完成")
+        except Exception as e:
+            logger.error(f"任务 {task.id} 执行失败: {str(e)}")
+            # 确保任务状态被更新为失败
+            task.status = TaskStatus.FAILED
+            task.error_message = f"任务执行过程中发生错误: {str(e)}"
+            await task.save()
         
     async def execute_generation_task(self, task: ImageGenerationTask) -> None:
         """执行图片生成任务
