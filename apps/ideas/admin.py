@@ -50,9 +50,28 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
     
     @display
     async def result_preview(self, obj) -> str:
-        """显示生成结果预览"""
+        """显示生成结果预览
+        
+        如果有多张图片(result_urls)，则显示所有图片的预览
+        如果只有单张图片(result_path)，则显示单张图片预览
+        """
+        # 优先显示result_urls中的所有图片
+        if hasattr(obj, 'result_urls') and obj.result_urls and isinstance(obj.result_urls, list) and len(obj.result_urls) > 0:
+            previews = []
+            for url in obj.result_urls:
+                if url and isinstance(url, str):
+                    # 确保URL以/开头
+                    url_with_slash = url if url.startswith('/') else f'/{url}'
+                    previews.append(f'<a href="{url_with_slash}" target="_blank"><img src="{url_with_slash}" height="50" style="margin-right: 5px;" /></a>')
+            if previews:
+                return ''.join(previews)
+        
+        # 如果没有result_urls或为空，则显示result_path
         if obj.result_path:
-            return f'<a href="{obj.result_path}" target="_blank"><img src="{obj.result_path}" height="50" /></a>'
+            # 确保URL以/开头
+            path_with_slash = obj.result_path if obj.result_path.startswith('/') else f'/{obj.result_path}'
+            return f'<a href="{path_with_slash}" target="_blank"><img src="{path_with_slash}" height="50" /></a>'
+        
         return "-"
     
     async def has_add_permission(self, user_id: int | None = None) -> bool:
@@ -184,9 +203,20 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
             if isinstance(result, dict) and result.get('status') == 'completed' and result.get('results') and len(result.get('results')) > 0:
                 # 成功生成图片
                 try:
-                    first_result = result['results'][0]
-                    if first_result and isinstance(first_result, dict):
-                        task.result_path = first_result.get('result_path')
+                    # 保存所有生成的图片URL到result_urls字段
+                    result_urls = []
+                    for img_result in result['results']:
+                        if img_result and isinstance(img_result, dict) and img_result.get('result_path'):
+                            # 确保URL以/开头
+                            path = img_result.get('result_path')
+                            path_with_slash = path if path.startswith('/') else f'/{path}'
+                            result_urls.append(path_with_slash)
+                    
+                    # 设置result_urls字段
+                    if result_urls:
+                        task.result_urls = result_urls
+                        # 同时保持向后兼容，将第一张图片路径保存到result_path
+                        task.result_path = result_urls[0]  # 这里已经确保了URL以/开头
                         task.status = TaskStatus.COMPLETED
                         task.error_message = None
                     else:
