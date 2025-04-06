@@ -10,9 +10,9 @@ class ImageSize(str, Enum):
     支持常见的图片尺寸格式，包括正方形、纵向和横向三种类型
     每个枚举值格式为"宽度*高度"的字符串
     """
+    portrait_large= "1280*720"
     square_large="1024*1024"
     portrait_medium= "720*1280"
-    portrait_large= "1280*720"
     landscape_medium= "768*1152"
     
     @property
@@ -99,6 +99,8 @@ class ImageGenerationTask(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True, description="任务创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="任务最后更新时间")
      # 结果和状态
+     #是否重新生成
+    retry = fields.BooleanField(default=False, description="是否重新生成")
 
     class Meta:
         table = "image_generation_tasks"

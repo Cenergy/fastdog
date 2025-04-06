@@ -1,3 +1,4 @@
+import re
 from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
 from tortoise.fields import CharField, TextField, JSONField
 from .models import ImageGenerationTask
@@ -17,7 +18,7 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
     - 批量操作和状态更新
     """
     model = ImageGenerationTask
-    max_num: int = 4
+    max_num: int = 2
     icon = "magic"
     display_name = "图片生成任务"
     list_display = ["id", "prompt_preview", "status", "result_preview", "created_at", "updated_at"]
@@ -36,7 +37,7 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
     }
 
     formfield_overrides = {
-        "result_urls": (WidgetType.Upload, {"required": False, "upload_action_name": "upload", "multiple": True})
+        "result_urls": (WidgetType.Upload, {"required": False, "upload_action_name": "upload", "multiple": True}),
     }
     
     @display
@@ -166,12 +167,15 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
             if hasattr(task, 'size') and task.size is not None:
                 size = task.size.value
             model_params = task.model_params or {}
+            num_images =task.num_images or 1
+            if num_images > self.max_num:
+                num_images = self.max_num
             
             # 执行图片生成
             result = generator.generate(
                 prompt=task.prompt,
                 output_dir=str(output_dir),
-                n=1,
+                n=num_images,
                 size=size,
                 **model_params
             )
