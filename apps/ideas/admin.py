@@ -17,6 +17,7 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
     - 批量操作和状态更新
     """
     model = ImageGenerationTask
+    max_num: int = 4
     icon = "magic"
     display_name = "图片生成任务"
     list_display = ["id", "prompt_preview", "status", "result_preview", "created_at", "updated_at"]
@@ -24,13 +25,18 @@ class ImageGenerationTaskAdmin(TortoiseModelAdmin):
     search_fields = ["id", "prompt"]
     list_per_page = 15
     ordering = ["-created_at"]
+    readonly_fields = ["status","result_path", "error_message","result_urls"]
     
     form_fields = {
         "prompt": TextField(description="生成提示词", required=True),
-        "model_params": JSONField(description="模型参数", required=False),
+        "model_params": JSONField(description="模型参数", required=False, default={}),
         "status": WidgetType.Select,
         "result_path": CharField(max_length=1024, description="生成结果路径", required=False),
         "error_message": TextField(description="错误信息", required=False)
+    }
+
+    formfield_overrides = {
+        "result_urls": (WidgetType.Upload, {"required": False, "upload_action_name": "upload", "multiple": True})
     }
     
     @display
