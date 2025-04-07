@@ -6,9 +6,10 @@ from apps.tasks.models import TaskStatus
 from typing import Dict, Any, List
 import asyncio
 from starlette.concurrency import run_in_threadpool
+from ..albums.admin import CustomModelAdmin
 
 @register(ImageGenerationTask)
-class ImageGenerationTaskAdmin(TortoiseModelAdmin):
+class ImageGenerationTaskAdmin(CustomModelAdmin):
     """图片生成任务管理
     
     提供图片生成任务的后台管理功能，包括：
