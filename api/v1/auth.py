@@ -102,7 +102,7 @@ async def register(user: UserCreate):
     user_dict["email_verified"] = False
     
     # 创建用户
-    new_user = await create_user(user_dict)
+    new_user = await create_user(user_dict,is_admin_creation=False)
     
     # 异步发送验证邮件
     asyncio.create_task(send_verification_email(user.email, verification_token))

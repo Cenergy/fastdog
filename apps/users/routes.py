@@ -5,10 +5,10 @@ from api.v1.deps import get_current_active_user, get_current_superuser
 
 router = APIRouter()
 
-@router.post("/", response_model=User_Pydantic)
-async def create_new_user(user: UserCreate):
-    # 通过API创建的用户，明确设置is_admin_creation=False
-    return await create_user(user, is_admin_creation=False)
+# @router.post("/", response_model=User_Pydantic)
+# async def create_new_user(user: UserCreate):
+#     # 通过API创建的用户，明确设置is_admin_creation=False
+#     return await create_user(user, is_admin_creation=False)
 
 @router.get("/", response_model=list[User_Pydantic])
 async def read_users(skip: int = 0, limit: int = 100, current_user: User_Pydantic = Depends(get_current_superuser)):
