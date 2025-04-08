@@ -366,3 +366,98 @@ class ImageGenerationTaskAdmin(CustomModelAdmin):
                 await task.save()
                 updated += 1
         return f"成功恢复 {updated} 个任务"
+    
+    async def delete_model(self, id: str) -> bool:
+        """删除任务及其关联的所有图片文件
+        
+        Args:
+            id: 任务ID
+            
+        Returns:
+            删除是否成功
+        """
+        try:
+            # 获取任务对象
+            task = await self.model.get(id=id)
+            
+            # 删除result_urls中的所有图片文件
+            if hasattr(task, 'result_urls') and task.result_urls and isinstance(task.result_urls, list):
+                import os
+                from pathlib import Path
+                
+                print(f"准备删除任务 {id} 的所有图片文件")
+                
+                for url in task.result_urls:
+                    if url and isinstance(url, str):
+                        try:
+                            # 将URL转换为文件系统路径（移除开头的斜杠）
+                            clean_url = url.lstrip('/')
+                            print(f"处理URL: {url}, 清理后: {clean_url}")
+                            
+                            # 构建文件的绝对路径
+                            if clean_url.startswith('static/'):
+                                # 如果URL以static/开头，直接使用STATIC_DIR作为基础路径
+                                relative_path = clean_url[7:]  # 移除'static/'前缀
+                                file_path = os.path.join(settings.STATIC_DIR, relative_path)
+                            else:
+                                # 否则，尝试多种可能的路径组合
+                                file_path = os.path.join(settings.STATIC_DIR, clean_url)
+                            
+                            print(f"构建的文件路径: {file_path}")
+                            
+                            # 检查文件是否存在
+                            if os.path.exists(file_path):
+                                # 确保文件路径在允许的目录中，防止误删除其他文件
+                                normalized_path = file_path.replace("\\", "/")
+                                if "results/ideas" in normalized_path:
+                                    os.remove(file_path)
+                                    print(f"已成功删除文件: {file_path}")
+                                else:
+                                    print(f"文件不在允许的目录中: {file_path}")
+                            else:
+                                print(f"文件不存在: {file_path}")
+                                
+                                # 尝试其他可能的路径
+                                basename = os.path.basename(file_path)
+                                alt_path = os.path.join(settings.STATIC_DIR, "results", "ideas", basename)
+                                print(f"尝试替代路径: {alt_path}")
+                                
+                                if os.path.exists(alt_path):
+                                    os.remove(alt_path)
+                                    print(f"使用替代路径成功删除文件: {alt_path}")
+                                else:
+                                    print(f"替代路径文件也不存在: {alt_path}")
+                        except Exception as e:
+                            print(f"删除文件时出错: {str(e)}, URL: {url}")
+            
+            # 如果只有单张图片路径(result_path)，也需要删除
+            if task.result_path and not (hasattr(task, 'result_urls') and task.result_urls):
+                try:
+                    import os
+                    
+                    # 将URL转换为文件系统路径（移除开头的斜杠）
+                    clean_path = task.result_path.lstrip('/')
+                    
+                    # 构建文件的绝对路径
+                    if clean_path.startswith('static/'):
+                        relative_path = clean_path[7:]
+                        file_path = os.path.join(settings.STATIC_DIR, relative_path)
+                    else:
+                        file_path = os.path.join(settings.STATIC_DIR, clean_path)
+                    
+                    # 检查文件是否存在
+                    if os.path.exists(file_path):
+                        # 确保文件路径在允许的目录中
+                        normalized_path = file_path.replace("\\", "/")
+                        if "results/ideas" in normalized_path:
+                            os.remove(file_path)
+                            print(f"已成功删除单张图片文件: {file_path}")
+                except Exception as e:
+                    print(f"删除单张图片文件时出错: {str(e)}")
+            
+            # 删除任务记录
+            return await super().delete_model(id)
+            
+        except Exception as e:
+            print(f"删除任务及其图片文件时出错: {str(e)}")
+            raise e
