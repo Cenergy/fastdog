@@ -4,8 +4,7 @@ from tortoise.fields import CharField, TextField, JSONField
 from .models import ImageGenerationTask
 from apps.tasks.models import TaskStatus
 from typing import Dict, Any, List
-import asyncio
-from starlette.concurrency import run_in_threadpool
+from core.config import settings
 from ..albums.admin import CustomModelAdmin
 
 @register(ImageGenerationTask)
@@ -96,6 +95,67 @@ class ImageGenerationTaskAdmin(CustomModelAdmin):
             if not id:
                 # 新任务默认为等待状态
                 payload["status"] = TaskStatus.PENDING
+            else:
+                # 获取当前任务实例以比较result_urls的变化
+                current_task = await self.model.get(id=id)
+                if "result_urls" in payload and hasattr(current_task, "result_urls"):
+                    # 获取当前和新的result_urls列表
+                    current_urls = current_task.result_urls or []
+                    new_urls = payload["result_urls"] if isinstance(payload["result_urls"], list) else []
+                    
+                    # 找出被删除的URL
+                    deleted_urls = [url for url in current_urls if url and url not in new_urls]
+                    
+                    if deleted_urls:
+                        print(f"检测到需要删除的URL: {deleted_urls}")
+                        
+                        # 删除对应的物理文件
+                        import os
+                        from pathlib import Path
+                        for url in deleted_urls:
+                            try:
+                                # 将URL转换为文件系统路径（移除开头的斜杠）
+                                clean_url = url.lstrip('/')
+                                print(f"处理URL: {url}, 清理后: {clean_url}")
+                                
+                                # 构建文件的绝对路径 - 使用更直接的方法
+                                if clean_url.startswith('static/'):
+                                    # 如果URL以static/开头，直接使用STATIC_DIR作为基础路径
+                                    relative_path = clean_url[7:]  # 移除'static/'前缀
+                                    file_path = os.path.join(settings.STATIC_DIR, relative_path)
+                                else:
+                                    # 否则，尝试多种可能的路径组合
+                                    file_path = os.path.join(settings.STATIC_DIR, clean_url)
+                                
+                                print(f"构建的文件路径: {file_path}")
+                                
+                                # 检查文件是否存在
+                                if os.path.exists(file_path):
+                                    # 确保文件路径在允许的目录中，防止误删除其他文件
+                                    normalized_path = file_path.replace("\\", "/")
+                                    if "results/ideas" in normalized_path:
+                                        os.remove(file_path)
+                                        print(f"已成功删除文件: {file_path}")
+                                    else:
+                                        print(f"文件不在允许的目录中: {file_path}")
+                                else:
+                                    print(f"文件不存在: {file_path}")
+                                    
+                                    # 尝试其他可能的路径
+                                    basename = os.path.basename(file_path)
+                                    alt_path = os.path.join(settings.STATIC_DIR, "results", "ideas", basename)
+                                    print(f"尝试替代路径: {alt_path}")
+                                    
+                                    if os.path.exists(alt_path):
+                                        os.remove(alt_path)
+                                        print(f"使用替代路径成功删除文件: {alt_path}")
+                                    else:
+                                        print(f"替代路径文件也不存在: {alt_path}")
+
+                            except Exception as e:
+                                print(f"删除文件时出错: {str(e)}, URL: {url}")
+                    else:
+                        print("没有检测到需要删除的URL")
             
             # 确保result_urls字段被正确处理
             if "result_urls" in payload:
