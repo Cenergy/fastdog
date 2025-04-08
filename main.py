@@ -25,7 +25,7 @@ load_dotenv()
 # 配置中间件
 app = setup_cors_middleware(app)
 app = setup_exception_handlers(app)
-app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
 
 # 配置静态文件
 app = setup_static_files(app)
