@@ -92,47 +92,73 @@ class ImageGenerationTaskAdmin(CustomModelAdmin):
         Returns:
             保存后的任务数据
         """
-        if not id:
-            # 新任务默认为等待状态
-            payload["status"] = TaskStatus.PENDING
+        try:
+            if not id:
+                # 新任务默认为等待状态
+                payload["status"] = TaskStatus.PENDING
             
-        # 保存任务
-        result = await super().save_model(id, payload)
-        
-        if result and not id:  # 只在创建新任务时执行
-            # 获取保存后的任务实例
-            task = await self.model.get(id=result["id"])
+            # 确保result_urls字段被正确处理
+            if "result_urls" in payload:
+                # 确保result_urls是一个列表
+                if isinstance(payload["result_urls"], list):
+                    # 过滤掉无效的URL
+                    payload["result_urls"] = [url for url in payload["result_urls"] if url and isinstance(url, str)]
+                    # 如果有result_urls，将第一个URL设置为result_path
+                    if payload["result_urls"]:
+                        payload["result_path"] = payload["result_urls"][0]
             
+            # 保存任务
+            result = await super().save_model(id, payload)
+            
+            if result:
+                # 验证保存结果
+                saved_task = await self.model.get(id=result["id"])
+                
+                # 如果result_urls没有正确保存，尝试直接更新
+                if "result_urls" in payload and saved_task.result_urls != payload["result_urls"]:
+                    saved_task.result_urls = payload["result_urls"]
+                    saved_task.result_path = payload["result_urls"][0] if payload["result_urls"] else None
+                    await saved_task.save()
+            
+            # 如果是新任务，启动异步处理
+            if result and not id:
+                # 获取保存后的任务实例
+                task = await self.model.get(id=result["id"])
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"准备提交任务 {task.id} 到异步队列")
+                
+                # 使用一个单独的函数来启动异步任务，确保表单立即返回
+                from concurrent.futures import ThreadPoolExecutor
+                import asyncio
+                
+                # 创建一个执行器来运行异步任务
+                executor = ThreadPoolExecutor(max_workers=1)
+                
+                # 提交任务到线程池，确保不阻塞当前请求
+                def start_task():
+                    # 创建一个新的事件循环来运行异步任务
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        # 在新的事件循环中运行任务
+                        loop.run_until_complete(self.execute_generation_task(task))
+                    finally:
+                        loop.close()
+                
+                # 在线程池中启动任务
+                executor.submit(start_task)
+                executor.shutdown(wait=False)  # 不等待任务完成
+                
+                logger.info(f"任务 {task.id} 已提交到线程池执行")
+            
+            return result
+        except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"准备提交任务 {task.id} 到异步队列")
-            
-            # 使用一个单独的函数来启动异步任务，确保表单立即返回
-            # 不使用asyncio.create_task，因为它可能会导致FastAdmin框架等待任务完成
-            from concurrent.futures import ThreadPoolExecutor
-            import asyncio
-            
-            # 创建一个执行器来运行异步任务
-            executor = ThreadPoolExecutor(max_workers=1)
-            
-            # 提交任务到线程池，确保不阻塞当前请求
-            def start_task():
-                # 创建一个新的事件循环来运行异步任务
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    # 在新的事件循环中运行任务
-                    loop.run_until_complete(self.execute_generation_task(task))
-                finally:
-                    loop.close()
-            
-            # 在线程池中启动任务
-            executor.submit(start_task)
-            executor.shutdown(wait=False)  # 不等待任务完成
-            
-            logger.info(f"任务 {task.id} 已提交到线程池执行")
-            
-        return result
+            logger.error(f"保存任务时出错: {str(e)}")
+            raise e
         
     async def _run_task_in_threadpool(self, task: ImageGenerationTask) -> None:
         """在线程池中执行任务
