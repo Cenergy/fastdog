@@ -429,32 +429,6 @@ class ImageGenerationTaskAdmin(CustomModelAdmin):
                                     print(f"替代路径文件也不存在: {alt_path}")
                         except Exception as e:
                             print(f"删除文件时出错: {str(e)}, URL: {url}")
-            
-            # 如果只有单张图片路径(result_path)，也需要删除
-            if task.result_path and not (hasattr(task, 'result_urls') and task.result_urls):
-                try:
-                    import os
-                    
-                    # 将URL转换为文件系统路径（移除开头的斜杠）
-                    clean_path = task.result_path.lstrip('/')
-                    
-                    # 构建文件的绝对路径
-                    if clean_path.startswith('static/'):
-                        relative_path = clean_path[7:]
-                        file_path = os.path.join(settings.STATIC_DIR, relative_path)
-                    else:
-                        file_path = os.path.join(settings.STATIC_DIR, clean_path)
-                    
-                    # 检查文件是否存在
-                    if os.path.exists(file_path):
-                        # 确保文件路径在允许的目录中
-                        normalized_path = file_path.replace("\\", "/")
-                        if "results/ideas" in normalized_path:
-                            os.remove(file_path)
-                            print(f"已成功删除单张图片文件: {file_path}")
-                except Exception as e:
-                    print(f"删除单张图片文件时出错: {str(e)}")
-            
             # 删除任务记录
             return await super().delete_model(id)
             
