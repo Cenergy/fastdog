@@ -10,3 +10,11 @@ dir = "./.uv/cache"
 
 [uv.venv]
 dir = "./venv"
+
+[uv.python]
+implementation = "cpython"
+version = "3.11"
+
+[uv.install]
+no-binary = false
+no-deps = false

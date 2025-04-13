@@ -1,17 +1,23 @@
-fastapi[all]
-tortoise-orm
-pydantic-settings
-passlib[bcrypt]
-python-jose[cryptography]
-aerich
-loguru
-tenacity
-fastapi-mail
+fastapi[all]==0.115.11
+tortoise-orm==0.24.2
+pydantic-settings==2.8.1
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.4.0
+aerich==0.8.2
+loguru==0.7.3
+tenacity==9.0.0
+fastapi-mail==1.4.2
 bcrypt==4.0.1
-argon2-cffi
-fastadmin
-pandas
-dashscope>=1.10.0
+argon2-cffi==23.1.0
+fastadmin==0.2.19
+pandas==2.2.3
+dashscope==1.22.2
+openpyxl==3.1.5
+pillow==11.1.0
+pyproject-toml==0.1.0
+requests==2.32.3
+gunicorn==21.2.0
+apscheduler==3.11.0
 # aerich init-db
 # aerich migrate
 # aerich upgrade

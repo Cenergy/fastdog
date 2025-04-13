@@ -42,11 +42,25 @@ dev = [
 [tool.uv]
 requirements = "requirements.txt"
 
-[tool.aerich]
-tortoise_orm = "core.database.TORTOISE_ORM"
-location = "./migrations"
-src_folder = "./."
+[tool.uv.cache]
+dir = "./.uv/cache"
+
+[tool.uv.venv]
+dir = "./venv"
+
+[tool.uv.python]
+implementation = "cpython"
+version = "3.11"
+
+[tool.uv.install]
+no-binary = false
+no-deps = false
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[tool.aerich]
+tortoise_orm = "core.database.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."
