@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# FastDog项目自动部署钩子
+# 此钩子在Git仓库接收到推送时自动触发部署流程
+
+####################################
+# 配置信息
+####################################
+# Git仓库目录
+GIT_DIR="/home/git/fastdog"
+# 应用部署目录
+APP_DIR="/home/web/fastdog"
+# 日志目录
+LOG_DIR="${APP_DIR}/logs"
+
+####################################
+# 日志输出函数
+####################################
+info() {
+    echo "[INFO] $1"
+}
+
+warn() {
+    echo "[WARN] $1"
+}
+
+error() {
+    echo "[ERROR] $1"
+    exit 1
+}
+
+####################################
+# 确保目录存在
+####################################
+mkdir -p ${APP_DIR} ${LOG_DIR}
+
+####################################
+# 更新代码
+####################################
+info "更新代码..."
+rm -rf ${APP_DIR}/*
+cp -r ${GIT_DIR}/* ${APP_DIR}/
+
+####################################
+# 设置Python环境
+####################################
+info "设置Python虚拟环境..."
+cd ${APP_DIR}
+
+# 创建并激活虚拟环境
+if [ ! -d "${APP_DIR}/venv" ]; then
+    python3 -m venv ${APP_DIR}/venv
+fi
+source ${APP_DIR}/venv/bin/activate
+
+####################################
+# 安装依赖
+####################################
+info "安装依赖..."
+# 检查是否安装了uv，如果没有则安装
+if ! command -v uv &> /dev/null; then
+    info "安装uv包管理器..."
+    pip install uv
+fi
+# 使用uv安装依赖
+uv pip install --upgrade pip
+uv pip install -r ${APP_DIR}/requirements.txt
+
+####################################
+# 配置环境变量
+####################################
+info "配置环境变量..."
+if [ ! -f "${APP_DIR}/.env" ]; then
+    cp ${APP_DIR}/.env.example ${APP_DIR}/.env
+    warn "请记得更新.env文件中的配置"
+fi
+
+####################################
+# 执行数据库迁移
+####################################
+info "执行数据库迁移..."
+cd ${APP_DIR}
+areich upgrade
+
+####################################
+# 重启服务
+####################################
+info "重启服务..."
+killall -9 gunicorn || true
+gunicorn -c ${APP_DIR}/deploy/gunicorn_conf.py main:app --daemon
+
+####################################
+# 重启Nginx
+####################################
+info "重启Nginx..."
+nginx -t && systemctl restart nginx
+
+info "钩子部署完成！"

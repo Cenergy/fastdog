@@ -1,0 +1,12 @@
+[uv]
+requirements = "requirements.txt"
+
+[uv.index]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[uv.cache]
+dir = "./.uv/cache"
+
+[uv.venv]
+dir = "./venv"
