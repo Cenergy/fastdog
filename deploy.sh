@@ -151,14 +151,14 @@ ssh ${SERVER_USER}@${SERVER_IP} << EOF
     cd ${APP_DIR}
     gunicorn -c ${APP_DIR}/deploy/gunicorn_conf.py main:app --daemon
     
-    # 配置Nginx
-    echo "配置Nginx..."
-    NGINX_CONF="/etc/nginx/conf.d/fastdog.conf"
-    cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF}
-    # 替换配置文件中的路径
-    sed -i "s|/path/to/your/static/files/|${APP_DIR}/static/|g" ${NGINX_CONF}
-    sed -i "s|/path/to/your/media/files/|${APP_DIR}/static/uploads/|g" ${NGINX_CONF}
-    sed -i "s|your_domain.com|$(hostname -I | awk '{print $1}')|g" ${NGINX_CONF}
+    # # 配置Nginx
+    # echo "配置Nginx..."
+    # NGINX_CONF="/etc/nginx/conf.d/fastdog.conf"
+    # cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF}
+    # # 替换配置文件中的路径
+    # sed -i "s|/path/to/your/static/files/|${APP_DIR}/static/|g" ${NGINX_CONF}
+    # sed -i "s|/path/to/your/media/files/|${APP_DIR}/static/uploads/|g" ${NGINX_CONF}
+    # sed -i "s|your_domain.com|$(hostname -I | awk '{print $1}')|g" ${NGINX_CONF}
     
     # 重启Nginx
     echo "重启Nginx..."
