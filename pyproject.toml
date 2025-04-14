@@ -23,6 +23,7 @@ dependencies = [
     "requests>=2.32.3",
     "tenacity>=9.0.0",
     "tortoise-orm>=0.24.2",
+    "gunicorn>=21.2.0",
 ]
 
 

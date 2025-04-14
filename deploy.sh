@@ -50,5 +50,5 @@ error() {
 # 1. 推送本地代码到服务器
 info "推送代码到服务器..."
 # 推送前强制更新引用
-git push --all --force-with-lease fastdog || error "推送代码失败"
+git push --all -f fastdog || error "推送代码失败"
 info "推送代码成功..."
