@@ -132,3 +132,4 @@ data/
 *.db
 *.db-shm
 *.db-wal
+uv.lock
