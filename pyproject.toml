@@ -2,7 +2,7 @@
 name = "fastgo"
 version = "0.1.0"
 description = "Fast api go go go"
-requires-python = "3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "aerich>=0.8.2",
     "apscheduler>=3.11.0",
@@ -34,4 +34,4 @@ src_folder = "./."
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
+default=true
