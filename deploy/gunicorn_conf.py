@@ -17,6 +17,8 @@ if not os.path.exists(log_dir):
 pidfile='./logs/gunicorn.pid'
 accesslog = "./logs/gunicorn_access.log"
 errorlog = "./logs/gunicorn_error.log"
+# 捕获标准输出和标准错误
+capture_output = True
 
 # 超时设置
 timeout = 180  # 工作进程超时时间(秒)，增加以处理长时间运行的请求
