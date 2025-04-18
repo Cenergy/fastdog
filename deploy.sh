@@ -71,19 +71,11 @@ info "推送代码成功..."
 ####################################
 info "连接到服务器并执行部署操作..."
 # 使用SSH连接到服务器并执行以下命令块
-ssh ${SERVER_USER}@${SERVER_IP} << EOF
+# 添加SSH连接选项以提高稳定性
+ssh -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 ${SERVER_USER}@${SERVER_IP} << EOF
     # 传递主脚本中的变量到服务器
     REMOTE_DIR="${REMOTE_DIR}"
     REMOTE_APP_DIR="${REMOTE_APP_DIR}"
-    ####################################
-    # Git钩子配置说明
-    ####################################
-    echo "注意：请确保服务器上已手动配置Git钩子..."
-    echo "确保服务器上的post-receive钩子已正确设置在 ${REMOTE_DIR}/hooks/post-receive"
-    echo "并且具有可执行权限 (chmod +x ${REMOTE_DIR}/hooks/post-receive)"
-    # 设置脚本遇到错误立即退出
-    set -e
-    
     ####################################
     # 服务器端变量定义
     ####################################
@@ -96,11 +88,13 @@ ssh ${SERVER_USER}@${SERVER_IP} << EOF
     # 日志文件目录
     LOG_DIR="${APP_DIR}/logs"
     
+    # 打印变量值以便调试
+    echo "应用部署目录: ${APP_DIR}"
+    echo "日志目录: ${LOG_DIR}"
+    
     ####################################
     # 目录创建
     # 确保应用和日志目录存在
-    ####################################
-    mkdir -p ${APP_DIR} ${LOG_DIR}
     
     # 安装依赖
     echo "安装依赖..."
@@ -112,10 +106,11 @@ ssh ${SERVER_USER}@${SERVER_IP} << EOF
     
     # 创建并激活虚拟环境
     echo "设置Python虚拟环境..."
-    if [ ! -d "${VENV_DIR}" ]; then
-        uv sync
-    fi
+    cd ${APP_DIR}
+    
+    uv sync
     source ${VENV_DIR}/bin/activate
+    echo "Python虚拟已激活..."
     
     # 配置环境变量
     echo "配置环境变量..."
@@ -141,7 +136,13 @@ ssh ${SERVER_USER}@${SERVER_IP} << EOF
     # # 替换配置文件中的路径
     # sed -i "s|/path/to/your/static/files/|${APP_DIR}/static/|g" ${NGINX_CONF}
     # sed -i "s|/path/to/your/media/files/|${APP_DIR}/static/uploads/|g" ${NGINX_CONF}
-    # sed -i "s|your_domain.com|$(hostname -I | awk '{print $1}')|g" ${NGINX_CONF}
+    # 使用更通用的方式获取IP地址 - 避免使用不兼容的命令
+    # SERVER_IP=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -n 1)
+    # 如果上面的命令不可用，可以尝试以下命令
+    # SERVER_IP=$(hostname | tr -d '\n')
+    # 或者直接使用固定IP地址
+    # SERVER_IP="服务器IP地址"
+    # sed -i "s|your_domain.com|${SERVER_IP}|g" ${NGINX_CONF}
     
     # 重启Nginx
     echo "重启Nginx..."

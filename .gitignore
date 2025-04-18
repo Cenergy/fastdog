@@ -133,3 +133,4 @@ data/
 *.db-shm
 *.db-wal
 uv.lock
+logs/
