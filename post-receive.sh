@@ -9,6 +9,8 @@ VENV_DIR="${APP_DIR}/.venv"
 LOG_DIR="${APP_DIR}/logs"
 #nginx配置文件目录
 NGINX_DIR="/usr/local/nginx/sbin"
+# supervisor配置文件目录
+SUPERVISOR_DIR="/etc/supervisor/conf.d"
 
 # 确保日志目录存在
 mkdir -p ${LOG_DIR}
@@ -69,6 +71,22 @@ if [ $? -eq 0 ]; then
 else
     log "警告: Gunicorn启动失败，请检查日志文件: ${LOG_FILE}"
 fi
+
+# 启动supervisor
+log "启动supervisor..."
+#supervisor存在则重启否则pass
+if command -v supervisorctl &> /dev/null; then
+    cp ${APP_DIR}/deploy/fastdog.conf ${SUPERVISOR_DIR}/fastdog.conf
+    log "supervisor配置文件已拷贝..."
+    # 重启supervisor
+    log "重启supervisor..."
+    supervisorctl reload 2>&1 | tee -a ${LOG_FILE}
+    log "supervisor已成功重启"
+else
+    log "警告: supervisor未安装，跳过supervisor配置"
+fi
+
+
 # 先拷贝nginx配置文件然后再重启nginx
 # log "拷贝nginx配置文件..."
 # cp ${APP_DIR}/deploy/nginx.conf /usr/local/etc/nginx/nginx.conf
