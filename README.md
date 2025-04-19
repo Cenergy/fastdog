@@ -1,6 +1,9 @@
 # FastDog
 
-FastDog是一个基于FastAPI的现代化Web后端框架，提供了完整的用户认证、权限管理和API开发功能。
+FastDog是一个基于FastAPI的现代化Web后端框架，提供了完整的用户认证、权限管理和API开发功能。fastdog的设计目标是提供一个简单易用的后端开发框架，帮助开发者快速构建高性能的Web应用。
+## 特点
+- 基于FastAPI，提供高性能的异步API
+- 基于Tortoise ORM的数据库操作
 
 ## 主要特性
 
