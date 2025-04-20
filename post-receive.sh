@@ -2,7 +2,7 @@
 #!/bin/bash
 
 # 应用部署目录
-APP_DIR="/Users/duaneng/Desktop/gishai/code/fastdog"
+APP_DIR="/home/web/fastdog"
 # Python虚拟环境目录
 VENV_DIR="${APP_DIR}/.venv"
 # 日志文件目录
