@@ -12,7 +12,7 @@ NGINX_DIR="/usr/local/nginx"
 # nginxs的sbin目录
 NGINX_SBIN_DIR="${NGINX_DIR}/sbin"
 #nginx的conf目录
-NGINX_CONF_DIR="${NGINX_DIR}/conf/conf.d"
+NGINX_CONF_FILE_PATH="${NGINX_DIR}/conf/conf.d/http/fastdog.conf"
 
 
 # 检查是否使用supervisor
@@ -128,7 +128,7 @@ fi
 
 先拷贝nginx配置文件然后再重启nginx
 log "拷贝nginx配置文件..."
-cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_DIR}/fastdog.conf
+cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_FILE_PATH}
 log "nginx配置文件已拷贝..."
 
 # 重启Nginx 
