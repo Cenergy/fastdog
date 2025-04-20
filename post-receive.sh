@@ -54,24 +54,6 @@ if [ ! -f "${APP_DIR}/.env" ]; then
 fi
 
 
-# 重启Gunicorn
-log "重启Gunicorn..."
-cd ${APP_DIR}
-# 先尝试优雅地停止现有的Gunicorn进程
-if [ -f "${LOG_DIR}/gunicorn.pid" ]; then
-    kill -TERM $(cat ${LOG_DIR}/gunicorn.pid) 2>/dev/null || true
-    sleep 2
-fi
-# 启动新的Gunicorn进程
-gunicorn -c ${APP_DIR}/deploy/gunicorn_conf.py main:app --daemon 2>&1 | tee -a ${LOG_FILE}
-
-# 检查Gunicorn是否成功启动
-if [ $? -eq 0 ]; then
-    log "Gunicorn已成功启动"
-else
-    log "警告: Gunicorn启动失败，请检查日志文件: ${LOG_FILE}"
-fi
-
 # 启动supervisor
 log "启动supervisor..."
 #supervisor存在则重启否则pass
@@ -84,6 +66,23 @@ if command -v supervisorctl &> /dev/null; then
     log "supervisor已成功重启"
 else
     log "警告: supervisor未安装，跳过supervisor配置"
+    # 重启Gunicorn
+    log "重启Gunicorn..."
+    cd ${APP_DIR}
+    # 先尝试优雅地停止现有的Gunicorn进程
+    if [ -f "${LOG_DIR}/gunicorn.pid" ]; then
+        kill -TERM $(cat ${LOG_DIR}/gunicorn.pid) 2>/dev/null || true
+        sleep 2
+    fi
+    # 启动新的Gunicorn进程
+    gunicorn -c ${APP_DIR}/deploy/gunicorn_conf.py main:app --daemon 2>&1 | tee -a ${LOG_FILE}
+
+    # 检查Gunicorn是否成功启动
+    if [ $? -eq 0 ]; then
+        log "Gunicorn已成功启动"
+    else
+        log "警告: Gunicorn启动失败，请检查日志文件: ${LOG_FILE}"
+    fi
 fi
 
 
