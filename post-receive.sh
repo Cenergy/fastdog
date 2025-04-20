@@ -36,9 +36,9 @@ log "开始部署: $(date)"
 log "==============================================="
 
 # 拉取代码
-log("拉取代码...")
+log "拉取代码..."
 git --work-tree=/home/web/fastdog --git-dir=/home/git/fastdog.git checkout main -f
-log("代码拉取完成...")
+log "代码拉取完成..."
 
 # 安装依赖
 log "安装依赖..."
