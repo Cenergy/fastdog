@@ -126,7 +126,7 @@ if [ "$USE_SUPERVISOR" = false ]; then
 fi
 
 
-先拷贝nginx配置文件然后再重启nginx
+#先拷贝nginx配置文件然后再重启nginx
 log "拷贝nginx配置文件..."
 cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_FILE_PATH}
 log "nginx配置文件已拷贝..."
