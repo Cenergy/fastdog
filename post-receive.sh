@@ -128,14 +128,8 @@ fi
 
 先拷贝nginx配置文件然后再重启nginx
 log "拷贝nginx配置文件..."
-# 判断git中这次提交是否修改了nginx.conf文件
-if git diff --name-only HEAD~1 HEAD | grep -q "nginx.conf"; then
-    log "nginx.conf文件已修改，将拷贝最新的配置文件"
-    cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_FILE_PATH}
-    log "nginx配置文件已拷贝..."
-else
-    log "nginx.conf文件未修改，将使用之前配置文件"· 
-fi
+cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_FILE_PATH}
+log "nginx配置文件已拷贝..."
 
 
 # 重启Nginx 
