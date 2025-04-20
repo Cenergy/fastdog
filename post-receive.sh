@@ -9,6 +9,11 @@ VENV_DIR="${APP_DIR}/.venv"
 LOG_DIR="${APP_DIR}/logs"
 #nginx配置文件目录
 NGINX_DIR="/usr/local/nginx/sbin"
+
+# 检查是否使用supervisor
+USE_SUPERVISOR=true
+# 检查supervisor是否安装，优先检查特定路径
+SUPERVISORCTL="/usr/local/python3/bin/supervisorctl"
 # supervisor配置文件目录
 SUPERVISOR_DIR="/etc/supervisor/conf.d"
 
@@ -54,20 +59,45 @@ if [ ! -f "${APP_DIR}/.env" ]; then
 fi
 
 
-# 启动supervisor
-log "启动supervisor..."
-#supervisor存在则重启否则pass
-if command -v supervisorctl &> /dev/null; then
-    cp ${APP_DIR}/deploy/fastdog.conf ${SUPERVISOR_DIR}/fastdog.conf
-    log "supervisor配置文件已拷贝..."
-    # 重启supervisor
-    log "重启supervisor..."
-    supervisorctl reload 2>&1 | tee -a ${LOG_FILE}
-    log "supervisor已成功重启"
-else
-    log "警告: supervisor未安装，跳过supervisor配置"
-    # 重启Gunicorn
-    log "重启Gunicorn..."
+# 启动应用服务
+if [ "$USE_SUPERVISOR" = true ]; then
+    log "使用supervisor启动应用..."
+    
+    # 检查supervisor是否可用
+    if [ -x "${SUPERVISORCTL}" ]; then
+        log "使用路径 ${SUPERVISORCTL} 的supervisorctl..."
+        SUPERVISOR_CMD="${SUPERVISORCTL}"
+    elif command -v supervisorctl &> /dev/null; then
+        log "使用系统PATH中的supervisorctl..."
+        SUPERVISOR_CMD="supervisorctl"
+    else
+        SUPERVISOR_CMD=""
+    fi
+
+    if [ -n "${SUPERVISOR_CMD}" ]; then
+        cp ${APP_DIR}/deploy/fastdog.conf ${SUPERVISOR_DIR}/fastdog.conf
+        log "supervisor配置文件已拷贝..."
+        # 重启supervisor
+        # 执行supervisorctl reread && supervisorctl update && supervisorctl reload
+        log "执行supervisor配置更新..."
+        ${SUPERVISOR_CMD} reread 2>&1 | tee -a ${LOG_FILE}
+        log "supervisorctl reread 已执行"
+        ${SUPERVISOR_CMD} update 2>&1 | tee -a ${LOG_FILE}
+        log "supervisorctl update 已执行"
+        log "重启supervisor..."
+        ${SUPERVISOR_CMD} reload 2>&1 | tee -a ${LOG_FILE}
+        log "supervisorctl reload 已执行"
+        log "supervisor已成功重启"
+    else
+        log "警告: supervisor未安装，尽管USE_SUPERVISOR=true，但将使用直接方式启动Gunicorn"
+        # 当supervisor不可用时，回退到直接启动Gunicorn
+        USE_SUPERVISOR=false
+    fi
+fi
+
+# 如果不使用supervisor或supervisor不可用，则直接启动Gunicorn
+if [ "$USE_SUPERVISOR" = false ]; then
+    log "直接启动Gunicorn..."
     cd ${APP_DIR}
     # 先尝试优雅地停止现有的Gunicorn进程
     if [ -f "${LOG_DIR}/gunicorn.pid" ]; then
