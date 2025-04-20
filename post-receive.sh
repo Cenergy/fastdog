@@ -7,8 +7,13 @@ APP_DIR="/home/web/fastdog"
 VENV_DIR="${APP_DIR}/.venv"
 # 日志文件目录
 LOG_DIR="${APP_DIR}/logs"
-#nginx配置文件目录
-NGINX_DIR="/usr/local/nginx/sbin"
+#nginx文件目录
+NGINX_DIR="/usr/local/nginx"
+# nginxs的sbin目录
+NGINX_SBIN_DIR="${NGINX_DIR}/sbin"
+#nginx的conf目录
+NGINX_CONF_DIR="${NGINX_DIR}/conf/conf.d"
+
 
 # 检查是否使用supervisor
 USE_SUPERVISOR=true
@@ -121,16 +126,16 @@ if [ "$USE_SUPERVISOR" = false ]; then
 fi
 
 
-# 先拷贝nginx配置文件然后再重启nginx
-# log "拷贝nginx配置文件..."
-# cp ${APP_DIR}/deploy/nginx.conf /usr/local/etc/nginx/nginx.conf
-# log "nginx配置文件已拷贝..."
+先拷贝nginx配置文件然后再重启nginx
+log "拷贝nginx配置文件..."
+cp ${APP_DIR}/deploy/nginx.conf ${NGINX_CONF_DIR}/fastdog.conf
+log "nginx配置文件已拷贝..."
 
 # 重启Nginx 
 log "重启Nginx..."
 # 检查Nginx是否安装并可用
-if [ -x "${NGINX_DIR}/nginx" ]; then
-    ${NGINX_DIR}/nginx -s reload 2>&1 | tee -a ${LOG_FILE}
+if [ -x "${NGINX_SBIN_DIR}/nginx" ]; then
+    ${NGINX_SBIN_DIR}/nginx -s reload 2>&1 | tee -a ${LOG_FILE}
 elif command -v nginx &> /dev/null; then
     nginx -s reload 2>&1 | tee -a ${LOG_FILE}
 else
