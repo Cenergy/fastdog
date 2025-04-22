@@ -30,7 +30,7 @@ async def get_resource_api(resource_id: int) -> ResourceInDB:
         raise HTTPException(status_code=404, detail="Resource not found")
     return resource
 
-@router.get("/", response_model=List[ResourceInDB])
+@router.get("/", response_model=List[ResourceInDB],operation_id="new_endpoint")
 async def get_resources_api(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
