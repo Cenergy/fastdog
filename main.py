@@ -9,11 +9,16 @@ from core.middleware.error_handler import setup_exception_handlers
 from core.middleware.rate_limit import RateLimitMiddleware
 from core.admin import setup_admin
 from core.static import setup_static_files
+from fastapi.staticfiles import StaticFiles
+from fastapi.openapi.docs import get_swagger_ui_html
 
 # 初始化日志系统
 logger = setup_logging()
 
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    docs_url=None  # 禁用默认的docs路由，我们将自定义它
+)
 
 import os
 from dotenv import load_dotenv
@@ -29,6 +34,22 @@ app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_
 
 # 配置静态文件
 app = setup_static_files(app)
+
+# 创建静态目录用于存放Swagger UI资源
+os.makedirs(os.path.join(settings.STATIC_DIR, "swagger-ui"), exist_ok=True)
+
+# 挂载Swagger UI静态文件
+app.mount("/static/swagger-ui", StaticFiles(directory=os.path.join(settings.STATIC_DIR, "swagger-ui")), name="swagger-ui")
+
+# 自定义Swagger UI路由，使用本地资源
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{settings.PROJECT_NAME} - Swagger UI",
+        swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui/swagger-ui.css",
+    )
 
 # 设置FastAdmin后台管理
 app = setup_admin(app)
