@@ -3,7 +3,7 @@ from typing import List, Optional
 import os
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "FastAPI Admin"
+    PROJECT_NAME: str = "Fast Go Go"
     API_V1_STR: str = "/api/v1"
     STATIC_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     SECRET_KEY: str = "YOUR_SECRET_KEY_HERE"  # 在生产环境中应该使用环境变量

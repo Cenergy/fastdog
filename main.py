@@ -35,11 +35,8 @@ app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_
 # 配置静态文件
 app = setup_static_files(app)
 
-# 创建静态目录用于存放Swagger UI资源
+# 确保Swagger UI资源目录存在
 os.makedirs(os.path.join(settings.STATIC_DIR, "swagger-ui"), exist_ok=True)
-
-# 挂载Swagger UI静态文件
-app.mount("/static/swagger-ui", StaticFiles(directory=os.path.join(settings.STATIC_DIR, "swagger-ui")), name="swagger-ui")
 
 # 自定义Swagger UI路由，使用本地资源
 @app.get("/docs", include_in_schema=False)
