@@ -22,6 +22,8 @@ class Album(models.Model):
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
     is_active = fields.BooleanField(default=True, description="是否可用")
     sort_order = fields.IntField(default=0, description="排序顺序")
+    latitude = fields.FloatField(null=True, description="纬度")
+    longitude = fields.FloatField(null=True, description="经度")
     
     # 关联字段
     photos: fields.ReverseRelation["Photo"]
@@ -32,6 +34,28 @@ class Album(models.Model):
     
     def __str__(self):
         return self.name
+        
+    async def save(self, *args, **kwargs):
+        """重写save方法以从关联照片的EXIF数据读取经纬度"""
+        # 先调用父类save方法确保模型已保存
+        await super().save(*args, **kwargs)
+        
+        # 只有在模型有ID且需要经纬度时才查询关联照片
+        if self.id and (not self.latitude or not self.longitude):
+            try:
+                # 遍历关联照片尝试获取GPS信息
+                for photo in await self.photos.all():
+                    if photo.exif_data and 'GPSInfo' in photo.exif_data:
+                        gps = photo.exif_data['GPSInfo']
+                        if 'GPSLatitude' in gps and 'GPSLongitude' in gps:
+                            self.latitude = gps['GPSLatitude']
+                            self.longitude = gps['GPSLongitude']
+                            # 更新经纬度后需要再次保存
+                            await super().save(update_fields=["latitude", "longitude"])
+                            break
+            except Exception as e:
+                # 捕获并记录异常，但不中断保存流程
+                print(f"从EXIF读取经纬度时出错: {e}")
 
 class Photo(models.Model):
     """照片模型"""
@@ -58,6 +82,8 @@ class Photo(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
     sort_order = fields.IntField(default=0, description="排序顺序")
+    latitude = fields.FloatField(null=True, description="纬度")
+    longitude = fields.FloatField(null=True, description="经度")
     
     # 关联字段
     album = fields.ForeignKeyField('models.Album', related_name='photos', description="所属相册")
@@ -94,3 +120,14 @@ class Photo(models.Model):
         #     await self.save(update_fields=["original_url"])
             
         return data
+        
+    async def save(self, *args, **kwargs):
+        """重写save方法以从EXIF数据读取经纬度"""
+        if not self.latitude or not self.longitude:
+            if self.exif_data and 'GPSInfo' in self.exif_data:
+                gps = self.exif_data['GPSInfo']
+                if 'GPSLatitude' in gps and 'GPSLongitude' in gps:
+                    self.latitude = gps['GPSLatitude']
+                    self.longitude = gps['GPSLongitude']
+        
+        await super().save(*args, **kwargs)
