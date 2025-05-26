@@ -6,7 +6,7 @@ from apps.albums.schemas import (
     AlbumCreate, AlbumUpdate, AlbumResponse,
     PhotoCreate, PhotoUpdate, PhotoResponse
 )
-from api.v1.deps import get_current_active_user
+from api.v1.deps import get_current_active_user, get_current_superuser
 from apps.users.models import User
 
 router = APIRouter()
@@ -50,7 +50,7 @@ async def update_album(album_id: int, album: AlbumUpdate, current_user: User = D
     return updated_album
 
 @router.delete("/{album_id}", response_model=dict)
-async def delete_album(album_id: int, current_user: User = Depends(get_current_active_user)):
+async def delete_album(album_id: int, current_user: User = Depends(get_current_superuser)):
     """删除相册"""
     success = await crud.delete_album(album_id)
     if not success:
@@ -94,7 +94,7 @@ async def update_photo(photo_id: int, photo: PhotoUpdate, current_user: User = D
     return updated_photo
 
 @router.delete("/photos/{photo_id}", response_model=dict)
-async def delete_photo(photo_id: int, current_user: User = Depends(get_current_active_user)):
+async def delete_photo(photo_id: int, current_user: User = Depends(get_current_superuser)):
     """删除照片"""
     success = await crud.delete_photo(photo_id)
     if not success:
