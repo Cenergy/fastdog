@@ -6,7 +6,7 @@ from apps.albums.schemas import (
     AlbumCreate, AlbumUpdate, AlbumResponse,
     PhotoCreate, PhotoUpdate, PhotoResponse
 )
-from api.v1.deps import get_current_active_user, get_current_superuser
+from api.v1.deps import get_current_superuser
 from apps.users.models import User
 
 router = APIRouter()
@@ -29,7 +29,7 @@ async def read_albums(
     return albums
 
 @router.post("/", response_model=AlbumResponse)
-async def create_album(album: AlbumCreate, current_user: User = Depends(get_current_active_user)):
+async def create_album(album: AlbumCreate, current_user: User = Depends(get_current_superuser)):
     """创建相册"""
     return await crud.create_album(album)
 
@@ -42,7 +42,7 @@ async def read_album(album_id: int):
     return album
 
 @router.put("/{album_id}", response_model=AlbumResponse)
-async def update_album(album_id: int, album: AlbumUpdate, current_user: User = Depends(get_current_active_user)):
+async def update_album(album_id: int, album: AlbumUpdate, current_user: User = Depends(get_current_superuser)):
     """更新相册"""
     updated_album = await crud.update_album(album_id, album)
     if updated_album is None:
@@ -73,7 +73,7 @@ async def read_photos(
     return photos
 
 @router.post("/photos/", response_model=PhotoResponse)
-async def create_photo(photo: PhotoCreate, current_user: User = Depends(get_current_active_user)):
+async def create_photo(photo: PhotoCreate, current_user: User = Depends(get_current_superuser)):
     """创建照片"""
     return await crud.create_photo(photo)
 
@@ -86,7 +86,7 @@ async def read_photo(photo_id: int):
     return photo
 
 @router.put("/photos/{photo_id}", response_model=PhotoResponse)
-async def update_photo(photo_id: int, photo: PhotoUpdate, current_user: User = Depends(get_current_active_user)):
+async def update_photo(photo_id: int, photo: PhotoUpdate, current_user: User = Depends(get_current_superuser)):
     """更新照片"""
     updated_photo = await crud.update_photo(photo_id, photo)
     if updated_photo is None:
