@@ -6,6 +6,8 @@ from apps.albums.schemas import (
     AlbumCreate, AlbumUpdate, AlbumResponse,
     PhotoCreate, PhotoUpdate, PhotoResponse
 )
+from api.v1.deps import get_current_active_user
+from apps.users.models import User
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ async def read_albums(
     return albums
 
 @router.post("/", response_model=AlbumResponse)
-async def create_album(album: AlbumCreate):
+async def create_album(album: AlbumCreate, current_user: User = Depends(get_current_active_user)):
     """创建相册"""
     return await crud.create_album(album)
 
@@ -40,7 +42,7 @@ async def read_album(album_id: int):
     return album
 
 @router.put("/{album_id}", response_model=AlbumResponse)
-async def update_album(album_id: int, album: AlbumUpdate):
+async def update_album(album_id: int, album: AlbumUpdate, current_user: User = Depends(get_current_active_user)):
     """更新相册"""
     updated_album = await crud.update_album(album_id, album)
     if updated_album is None:
@@ -48,7 +50,7 @@ async def update_album(album_id: int, album: AlbumUpdate):
     return updated_album
 
 @router.delete("/{album_id}", response_model=dict)
-async def delete_album(album_id: int):
+async def delete_album(album_id: int, current_user: User = Depends(get_current_active_user)):
     """删除相册"""
     success = await crud.delete_album(album_id)
     if not success:
@@ -71,7 +73,7 @@ async def read_photos(
     return photos
 
 @router.post("/photos/", response_model=PhotoResponse)
-async def create_photo(photo: PhotoCreate):
+async def create_photo(photo: PhotoCreate, current_user: User = Depends(get_current_active_user)):
     """创建照片"""
     return await crud.create_photo(photo)
 
@@ -84,7 +86,7 @@ async def read_photo(photo_id: int):
     return photo
 
 @router.put("/photos/{photo_id}", response_model=PhotoResponse)
-async def update_photo(photo_id: int, photo: PhotoUpdate):
+async def update_photo(photo_id: int, photo: PhotoUpdate, current_user: User = Depends(get_current_active_user)):
     """更新照片"""
     updated_photo = await crud.update_photo(photo_id, photo)
     if updated_photo is None:
@@ -92,7 +94,7 @@ async def update_photo(photo_id: int, photo: PhotoUpdate):
     return updated_photo
 
 @router.delete("/photos/{photo_id}", response_model=dict)
-async def delete_photo(photo_id: int):
+async def delete_photo(photo_id: int, current_user: User = Depends(get_current_active_user)):
     """删除照片"""
     success = await crud.delete_photo(photo_id)
     if not success:
