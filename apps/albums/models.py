@@ -24,6 +24,8 @@ class Album(models.Model):
     sort_order = fields.IntField(default=0, description="排序顺序")
     latitude = fields.FloatField(null=True, description="纬度")
     longitude = fields.FloatField(null=True, description="经度")
+    taken_at = fields.DatetimeField(null=True, description="拍摄时间")
+    location = fields.CharField(max_length=255, null=True, description="拍摄地点")
     
     # 关联字段
     photos: fields.ReverseRelation["Photo"]

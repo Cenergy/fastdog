@@ -37,7 +37,7 @@ class AlbumResponse(AlbumBase):
     photo_count: Optional[int] = Field(0, description="照片数量")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # 照片模型
 class PhotoBase(BaseModel):
@@ -78,4 +78,4 @@ class PhotoResponse(PhotoBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
