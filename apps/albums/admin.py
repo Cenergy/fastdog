@@ -273,6 +273,10 @@ class CategoryModelAdmin(TortoiseModelAdmin):
         "is_active": WidgetType.Checkbox,
         "sort_order": WidgetType.InputNumber
     }
+      # An override to the verbose_name from the model's inner Meta class.
+    verbose_name="相册类型"
+    # An override to the verbose_name_plural from the model's inner Meta class.
+    verbose_name_plural="相册类型"
     
     @display
     async def album_count(self, obj) -> int:
@@ -290,6 +294,8 @@ class CategoryModelAdmin(TortoiseModelAdmin):
 class AlbumModelAdmin(TortoiseModelAdmin):
     model = Album
     icon = "image"
+    verbose_name="相册"
+    verbose_name_plural="相册管理"
     display_name = "相册管理"
     list_display = ["id", "name", "category_name", "is_public", "is_active", "created_at", "photo_count"]
     list_display_links = ["id", "name"]
@@ -635,7 +641,8 @@ class PhotoModelAdmin(CustomModelAdmin):
     model = Photo
     order = 3
     icon = "camera"
-    display_name = "照片管理"
+    verbose_name="照片"
+    verbose_name_plural="照片管理"
     list_display = ["id", "title", "album_name", "file_format", "thumbnail_preview", "is_active", "created_at"]
     list_display_links = ["id", "title"]
     list_filter = ["file_format", "is_active", "created_at", "album"]
