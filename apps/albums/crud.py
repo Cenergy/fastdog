@@ -68,7 +68,7 @@ async def get_albums(
     with_photo_count: bool = False,
 ) -> List[Album]:
     """获取相册列表"""
-    query = Album.filter(is_active=is_active)
+    query = Album.filter(is_active=is_active).prefetch_related('category')
     
     if is_public is not None:
         query = query.filter(is_public=is_public)
