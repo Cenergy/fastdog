@@ -12,6 +12,23 @@ class PhotoFormat(str, Enum):
     WEBP = "webp"
     OTHER = "other"
 
+class AlbumCategory(models.Model):
+    """相册分类模型"""
+    name = fields.CharField(max_length=255, description="分类名称")
+    description = fields.TextField(description="分类描述", null=True)
+    sort_order = fields.IntField(default=0, description="排序顺序")
+    is_active = fields.BooleanField(default=True, description="是否可用")
+    created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
+    updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
+
+    
+    class Meta:
+        table = "album_categories"
+        description = "相册分类表"
+    
+    def __str__(self):
+        return self.name
+
 class Album(models.Model):
     """相册模型"""
     name = fields.CharField(max_length=255, description="相册名称")
@@ -29,6 +46,7 @@ class Album(models.Model):
     
     # 关联字段
     photos: fields.ReverseRelation["Photo"]
+    category = fields.ForeignKeyField('models.AlbumCategory', related_name='albums', description="所属分类", null=True)
     
     class Meta:
         table = "albums"

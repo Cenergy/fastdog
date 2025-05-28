@@ -2,8 +2,57 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 from typing import List, Optional, Dict, Any, Union
 
-from apps.albums.models import Album, Photo
-from apps.albums.schemas import AlbumCreate, AlbumUpdate, PhotoCreate, PhotoUpdate
+from apps.albums.models import Album, Photo, AlbumCategory
+from apps.albums.schemas import AlbumCreate, AlbumUpdate, PhotoCreate, PhotoUpdate, CategoryCreate, CategoryUpdate
+
+# 分类 CRUD操作
+async def get_category(category_id: int) -> Optional[AlbumCategory]:
+    """获取单个分类"""
+    return await AlbumCategory.get_or_none(id=category_id)
+
+async def get_categories(
+    skip: int = 0,
+    limit: int = 100,
+    is_active: bool = True,
+    with_album_count: bool = False,
+) -> List[AlbumCategory]:
+    """获取分类列表"""
+    query = AlbumCategory.filter(is_active=is_active)
+    
+    # 添加相册数量统计
+    if with_album_count:
+        query = query.annotate(album_count=Count('albums'))
+    
+    return await query.order_by('sort_order', '-created_at').offset(skip).limit(limit).all()
+
+async def create_category(category_data: CategoryCreate) -> AlbumCategory:
+    """创建分类"""
+    category_dict = category_data.dict(exclude_unset=True)
+    category = await AlbumCategory.create(**category_dict)
+    return category
+
+async def update_category(category_id: int, category_data: CategoryUpdate) -> Optional[AlbumCategory]:
+    """更新分类"""
+    category = await get_category(category_id)
+    if not category:
+        return None
+    
+    update_data = category_data.dict(exclude_unset=True, exclude_none=True)
+    if update_data:
+        await category.update_from_dict(update_data).save()
+    
+    return category
+
+async def delete_category(category_id: int) -> bool:
+    """删除分类"""
+    category = await get_category(category_id)
+    if not category:
+        return False
+    
+    # 逻辑删除，将is_active设为False
+    category.is_active = False
+    await category.save(update_fields=["is_active"])
+    return True
 
 # Album CRUD操作
 async def get_album(album_id: int) -> Optional[Album]:
@@ -15,6 +64,7 @@ async def get_albums(
     limit: int = 100,
     is_active: bool = True,
     is_public: Optional[bool] = None,
+    category_id: Optional[int] = None,
     with_photo_count: bool = False,
 ) -> List[Album]:
     """获取相册列表"""
@@ -22,6 +72,9 @@ async def get_albums(
     
     if is_public is not None:
         query = query.filter(is_public=is_public)
+    
+    if category_id is not None:
+        query = query.filter(category_id=category_id)
     
     # 添加照片数量统计
     if with_photo_count:

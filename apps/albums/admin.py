@@ -1,6 +1,6 @@
 from fastadmin import TortoiseModelAdmin, register, action, display, WidgetType
 from tortoise.fields import CharField, TextField, JSONField
-from .models import Album, Photo, PhotoFormat
+from .models import Album, Photo, PhotoFormat,AlbumCategory
 from fastapi import UploadFile
 from uuid import UUID, uuid4
 from uuid import UUID
@@ -251,20 +251,49 @@ def get_image_dimensions(image: Image.Image) -> Dict[str, int]:
     }
 
 
+@register(AlbumCategory)
+class CategoryModelAdmin(TortoiseModelAdmin):
+    """相册分类管理类
+    
+    处理相册分类的创建、编辑、删除等管理操作
+    """
+    model = AlbumCategory
+    icon = "folder"
+    display_name = "相册分类管理"
+    list_display = ["id", "name", "description", "is_active", "created_at", "album_count"]
+    list_display_links = ["id", "name"]
+    list_filter = ["is_active", "created_at"]
+    search_fields = ["name", "description"]
+    list_per_page = 15
+    ordering = ["sort_order", "-created_at"]
+    
+    form_fields = {
+        "name": CharField(max_length=255, description="分类名称"),
+        "description": TextField(description="分类描述", required=False),
+        "is_active": WidgetType.Checkbox,
+        "sort_order": WidgetType.InputNumber
+    }
+    
+    @display
+    async def album_count(self, obj) -> int:
+        """获取分类中的相册数量
+        
+        Args:
+            obj: 分类对象
+            
+        Returns:
+            相册数量
+        """
+        return await Album.filter(category_id=obj.id).count()
+
 @register(Album)
 class AlbumModelAdmin(TortoiseModelAdmin):
-    """相册管理类
-    
-    处理相册的创建、编辑、删除等管理操作
-    支持封面图片的上传和处理
-    删除相册及其关联的所有图片文件
-    """
     model = Album
     icon = "image"
     display_name = "相册管理"
-    list_display = ["id", "name", "is_public", "is_active", "created_at", "photo_count"]
+    list_display = ["id", "name", "category_name", "is_public", "is_active", "created_at", "photo_count"]
     list_display_links = ["id", "name"]
-    list_filter = ["is_public", "is_active", "created_at"]
+    list_filter = ["is_public", "is_active", "created_at", "category"]
     search_fields = ["name", "description"]
     list_per_page = 15
     ordering = ["-created_at"]
@@ -272,14 +301,33 @@ class AlbumModelAdmin(TortoiseModelAdmin):
     form_fields = {
         "name": CharField(max_length=255, description="相册名称"),
         "description": TextField(description="相册描述", required=False),
+        "category": CharField(max_length=255, description="所属分类", required=False),
         "is_public": WidgetType.Checkbox,
         "is_active": WidgetType.Checkbox,
         "cover_image": CharField(max_length=1024, description="封面图片", required=False),
-        "sort_order": WidgetType.InputNumber
+        "sort_order": WidgetType.InputNumber,
+        "location": CharField(max_length=255, description="拍摄地点", required=False),
+        "taken_at": WidgetType.DateTimePicker
     }
     formfield_overrides = {
-        "cover_image": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"})
+        "cover_image": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"}),
     }
+
+    @display
+    async def category_name(self, obj) -> str:
+        """获取相册所属分类名称
+        
+        Args:
+            obj: 相册对象
+            
+        Returns:
+            分类名称，如果分类不存在则返回"-"
+        """
+        if obj.category_id:
+            category = await AlbumCategory.get_or_none(id=obj.category_id)
+            if category:
+                return category.name
+        return "-"
     
     @display
     async def photo_count(self, obj) -> int:
@@ -348,7 +396,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 
             elif isinstance(file, str):
                 if not self.is_valid_base64(file):
-                    raise ValueError("无效的base64图片格式或不支持的图片类型")
+                    raise ValueError("无效的base64图片格式或图片类型")
                     
                 # 处理base64编码的图片
                 unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
@@ -1316,13 +1364,6 @@ class PhotoModelAdmin(CustomModelAdmin):
                                 if os.path.exists(original_file_path):
                                     print(f"删除关联的原始图片文件: {original_file_path}")
                                     os.remove(original_file_path)
-            
-            # 删除缩略图
-            if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
-                thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
-                if os.path.exists(thumbnail_path):
-                    print(f"删除旧的缩略图文件: {thumbnail_path}")
-                    os.remove(thumbnail_path)
                 
                 # 检查并删除可能存在的原始图片
                 file_name = os.path.basename(photo.thumbnail_url)

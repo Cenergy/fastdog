@@ -4,12 +4,57 @@ from typing import List, Optional
 from apps.albums import crud
 from apps.albums.schemas import (
     AlbumCreate, AlbumUpdate, AlbumResponse,
-    PhotoCreate, PhotoUpdate, PhotoResponse
+    PhotoCreate, PhotoUpdate, PhotoResponse,
+    CategoryCreate, CategoryUpdate, CategoryResponse
 )
 from api.v1.deps import get_current_superuser
 from apps.users.models import User
 
 router = APIRouter()
+
+# 分类接口
+@router.get("/categories/", response_model=List[CategoryResponse])
+async def read_categories(
+    skip: int = 0,
+    limit: int = 100,
+    with_album_count: bool = Query(False, description="是否包含相册数量")
+):
+    """获取分类列表"""
+    categories = await crud.get_categories(
+        skip=skip,
+        limit=limit,
+        with_album_count=with_album_count
+    )
+    return categories
+
+@router.post("/categories/", response_model=CategoryResponse)
+async def create_category(category: CategoryCreate, current_user: User = Depends(get_current_superuser)):
+    """创建分类"""
+    return await crud.create_category(category)
+
+@router.get("/categories/{category_id}", response_model=CategoryResponse)
+async def read_category(category_id: int):
+    """获取单个分类"""
+    category = await crud.get_category(category_id)
+    if category is None:
+        raise HTTPException(status_code=404, detail="分类不存在")
+    return category
+
+@router.put("/categories/{category_id}", response_model=CategoryResponse)
+async def update_category(category_id: int, category: CategoryUpdate, current_user: User = Depends(get_current_superuser)):
+    """更新分类"""
+    updated_category = await crud.update_category(category_id, category)
+    if updated_category is None:
+        raise HTTPException(status_code=404, detail="分类不存在")
+    return updated_category
+
+@router.delete("/categories/{category_id}", response_model=dict)
+async def delete_category(category_id: int, current_user: User = Depends(get_current_superuser)):
+    """删除分类"""
+    success = await crud.delete_category(category_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="分类不存在")
+    return {"success": True}
 
 # 相册接口
 @router.get("/", response_model=List[AlbumResponse])
@@ -17,6 +62,7 @@ async def read_albums(
     skip: int = 0,
     limit: int = 100,
     is_public: Optional[bool] = None,
+    category_id: Optional[int] = None,
     with_photo_count: bool = Query(False, description="是否包含照片数量")
 ):
     """获取相册列表"""
@@ -24,6 +70,7 @@ async def read_albums(
         skip=skip,
         limit=limit,
         is_public=is_public,
+        category_id=category_id,
         with_photo_count=with_photo_count
     )
     return albums
