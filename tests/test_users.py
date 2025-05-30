@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 from main import app
 from apps.users.models import User
-from core.security import verify_password
+from core.middleware.security import verify_password
 
 @pytest.mark.asyncio
 async def test_create_user():

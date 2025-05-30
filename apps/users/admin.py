@@ -2,7 +2,7 @@ from fastadmin import TortoiseModelAdmin, register
 from fastadmin import TortoiseInlineModelAdmin, TortoiseModelAdmin, WidgetType, action, display
 from .models import User
 from .crud import get_user_by_username_or_email
-from core.security import verify_password, get_password_hash
+from core.middleware.security import verify_password, get_password_hash
 
 
 @register(User)

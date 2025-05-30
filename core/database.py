@@ -51,7 +51,7 @@ async def init_db():
 
         # 创建默认管理员账户
         from apps.users.crud import get_user_by_username_or_email, create_user
-        from core.security import get_password_hash
+        from core.middleware.security import get_password_hash
 
         admin_email = settings.DEFAULT_ADMIN_EMAIL
         admin_user = await get_user_by_username_or_email(admin_email)

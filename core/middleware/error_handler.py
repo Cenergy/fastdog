@@ -2,7 +2,7 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from tortoise.exceptions import DoesNotExist
-from core.exceptions import CustomException
+from core.middleware.exceptions import CustomException
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(

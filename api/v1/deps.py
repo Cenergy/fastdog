@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from core.settings import settings
-from core.security import verify_password
+from core.middleware.security import verify_password
 from apps.users.crud import get_user
 from apps.users.models import User_Pydantic
 

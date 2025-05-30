@@ -4,7 +4,7 @@ from fastadmin import TortoiseModelAdmin, register, ModelAdmin, action, display,
 from apps.users.models import User
 from core.settings import settings
 from apps.users.crud import get_user_by_username_or_email
-from core.security import verify_password
+from core.middleware.security import verify_password
 
 from typing import Type, Dict, List, Tuple, Any, Optional
 from uuid import UUID
