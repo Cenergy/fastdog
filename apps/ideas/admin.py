@@ -20,6 +20,8 @@ class ImageGenerationTaskAdmin(CustomModelAdmin):
     model = ImageGenerationTask
     max_num: int = 2
     icon = "magic"
+    verbose_name="图片生成"
+    verbose_name_plural="图片生成任务"
     display_name = "图片生成任务"
     list_display = ["id", "prompt_preview", "status", "result_preview", "created_at", "updated_at"]
     list_filter = ["status", "created_at"]

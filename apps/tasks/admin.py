@@ -7,6 +7,8 @@ from .scheduler import scheduler
 class TaskModelAdmin(TortoiseModelAdmin):
     model = Task
     icon = "clock"
+    verbose_name="任务"
+    verbose_name_plural="任务管理"
     display_name = "任务管理"
     list_display = ["id", "name", "task_type", "is_active","status", "next_run_time", "last_run_time", "created_at"]
     list_display_links = ["id", "name"]

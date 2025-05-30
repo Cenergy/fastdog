@@ -401,15 +401,15 @@ wheels = [
 
 [[package]]
 name = "fastadmin"
-version = "0.2.19"
+version = "0.2.22"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "asgiref" },
     { name = "pyjwt" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0f/38/31fc7533afebcbcd35ad037c6c11423d8ef18863272fc1f5f7a565de995e/fastadmin-0.2.19.tar.gz", hash = "sha256:20a3122967a2a454baef1db760af467e20802293f5b669eeef0a8c5fcb3a03c3", size = 1394003 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/50/2a/e5443dbf1eba8d9799862b87edcb5a8e3c8d837923aa6617222ce8f5747b/fastadmin-0.2.22.tar.gz", hash = "sha256:51703a9e0a892ce2baeceb43cafef7f5ecbbc70ee17dd3f93f25277f81bdcbe0", size = 1660674 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/69/13/42d52b3effc6f06be422337edecc6bbf37b5fbb8b4ca98a47a2e2fe03c54/fastadmin-0.2.19-py3-none-any.whl", hash = "sha256:49192d74aa94068625b726f5843bfb49697303ec2255f526ce896baf074c7f1e", size = 1411559 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/80/26/cb8393ce0c179c29b15a7ce214b22d798a547f505f4c4b0b0a11a580f2c6/fastadmin-0.2.22-py3-none-any.whl", hash = "sha256:4e8e1341a5097d9da7f2a8c5b925de8bf16253822e7b857a5d430d3b026251b8", size = 1679535 },
 ]
 
 [[package]]
@@ -535,7 +535,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=23.1.0" },
     { name = "bcrypt", specifier = "==4.0.1" },
     { name = "dashscope", specifier = ">=1.22.2" },
-    { name = "fastadmin", specifier = ">=0.2.19" },
+    { name = "fastadmin", specifier = ">=0.2.22" },
     { name = "fastapi", extras = ["all"], specifier = ">=0.115.11" },
     { name = "fastapi-mail", specifier = ">=1.4.2" },
     { name = "fastapi-mcp", specifier = ">=0.3.1" },
