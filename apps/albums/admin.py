@@ -9,7 +9,7 @@ import re
 import base64
 from PIL import Image, UnidentifiedImageError
 import io
-from core.config import settings
+from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
 from typing import Optional, Dict, Any, List, Tuple
 

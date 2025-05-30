@@ -3,7 +3,7 @@ from typing import Optional, List, Callable, Any, Dict, Union
 from fastapi import Request, Response, HTTPException, status
 from datetime import datetime
 import re
-from core.config import settings
+from core.settings import settings
 
 def _version_to_tuple(version: str) -> tuple:
     """将版本字符串转换为可比较的元组

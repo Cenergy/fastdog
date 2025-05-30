@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from pydantic import EmailStr
 from loguru import logger
-from core.config import settings
+from core.settings import settings
 
 conf = ConnectionConfig(**settings.EMAIL_CONNECTION_CONFIG)
 fastmail = FastMail(conf)

@@ -7,7 +7,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
-from core.config import settings
+from core.settings import settings
 from apps.albums.models import Photo
 
 
@@ -44,4 +44,4 @@ async def update_photos_original_url():
 
 if __name__ == "__main__":
     # 运行迁移脚本
-    asyncio.run(update_photos_original_url()) 
+    asyncio.run(update_photos_original_url())

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastadmin import fastapi_app as admin_app
 from fastadmin import TortoiseModelAdmin, register, ModelAdmin, action, display, WidgetType
 from apps.users.models import User
-from core.config import settings
+from core.settings import settings
 from apps.users.crud import get_user_by_username_or_email
 from core.security import verify_password
 

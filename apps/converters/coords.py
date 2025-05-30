@@ -29,7 +29,7 @@ from .crud import (
 )
 from api.v1.deps import get_current_active_user
 from apps.users.models import User
-from core.config import settings
+from core.settings import settings
 
 router = APIRouter(prefix="/coords")
 

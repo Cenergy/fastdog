@@ -8,7 +8,7 @@ from datetime import datetime
 import pandas as pd
 import concurrent.futures
 from utils.coordinate import convert_coordinates
-from core.config import settings
+from core.settings import settings
 
 
 def download_gps_template() -> StreamingResponse:

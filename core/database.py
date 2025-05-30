@@ -1,10 +1,37 @@
 from tortoise import Tortoise
-from core.config import settings
+from tortoise.backends.base.config_generator import generate_config
+from core.settings import settings
 from core.app_models import ALL_MODELS
-from core.database_config import get_db_config, get_db_type
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 import pandas as pd
+from functools import wraps
+from typing import Dict, Any
+
+def get_db_config() -> Dict[str, Any]:
+    try:
+        db_type = settings.get_db_type()
+        if db_type not in settings.DB_POOL_CONFIGS:
+            logger.warning(f"未找到数据库类型 {db_type} 的连接池配置，将使用默认配置")
+            db_type = 'sqlite'
+
+        config = generate_config(
+            db_url=settings.DATABASE_URL,
+            app_modules={
+                'models': [*ALL_MODELS, 'aerich.models']
+            },
+            connection_label='default'
+        )
+        
+        # 添加对应数据库类型的连接池配置
+        pool_config = settings.get_db_pool_config(db_type)
+        for db_config in config['connections'].values():
+            db_config.update(pool_config)
+        
+        return config
+    except Exception as e:
+        logger.error(f"生成数据库配置失败: {str(e)}")
+        raise
 
 TORTOISE_ORM = get_db_config()
 
@@ -83,7 +110,7 @@ async def get_connection_for_pandas():
         connection = Tortoise.get_connection('default')
         
         # 获取数据库类型
-        db_type = get_db_type(settings.DATABASE_URL)
+        db_type = settings.get_db_type()
         
         # 根据数据库类型获取适用于pandas的连接对象
         if db_type == 'sqlite':

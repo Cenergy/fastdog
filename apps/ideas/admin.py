@@ -4,7 +4,7 @@ from tortoise.fields import CharField, TextField, JSONField
 from .models import ImageGenerationTask
 from apps.tasks.models import TaskStatus
 from typing import Dict, Any, List
-from core.config import settings
+from core.settings import settings
 from ..albums.admin import CustomModelAdmin
 
 @register(ImageGenerationTask)

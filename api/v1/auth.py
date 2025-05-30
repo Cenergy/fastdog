@@ -2,7 +2,7 @@ import asyncio
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from core.config import settings
+from core.settings import settings
 from datetime import datetime
 from core.security import create_access_token, verify_password, get_password_hash, create_verification_token
 from apps.users.crud import get_user_by_username_or_email, create_user, update_user, get_user_by_verification_token

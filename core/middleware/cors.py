@@ -1,5 +1,5 @@
 from fastapi.middleware.cors import CORSMiddleware
-from core.config import settings
+from core.settings import settings
 
 def setup_cors_middleware(app):
     """配置 CORS 中间件"""

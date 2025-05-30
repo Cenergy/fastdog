@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from core.config import settings
+from core.settings import settings
 from core.database import init_db, close_db
 from core.logging import setup_logging
 from api.v1.api import api_router

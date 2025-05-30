@@ -7,7 +7,7 @@ import asyncio
 from apps.tasks.models import TaskStatus
 from .models import ImageGenerationTask, ImageGenerationType
 from .genImage import ImageGenerator
-from core.config import settings
+from core.settings import settings
 from loguru import logger
 
 def generate_image_task(task_id: Optional[str] = None):

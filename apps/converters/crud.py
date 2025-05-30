@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 from .models import Converter, ConverterType
 from .schemas import ConverterCreate, ConverterUpdate
-from core.config import settings
+from core.settings import settings
 
 async def create_converter(converter: ConverterCreate) -> Converter:
     """创建转换器
