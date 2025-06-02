@@ -20,19 +20,34 @@ class InterceptHandler(logging.Handler):
             level, record.getMessage()
         )
 
+def debug_filter(record):
+    """过滤掉不需要的DEBUG信息"""
+    message = record["message"]
+    # 过滤文件变化监控的DEBUG信息
+    if "changes detected" in message.lower():
+        return False
+    # 过滤git相关的DEBUG信息
+    if ".git/" in message:
+        return False
+    # 过滤日志文件轮转的DEBUG信息
+    if "app.log" in message and ("deleted" in message or "added" in message):
+        return False
+    return True
+
 def setup_logging():
     # 创建日志目录
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
 
     # 配置日志格式
-    log_format = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    log_format = settings.LOG_FORMAT
+    log_level = settings.LOG_LEVEL
 
     # 配置日志输出
     logger.configure(
         handlers=[
-            {"sink": sys.stdout, "format": log_format},
-            {"sink": str(logs_dir / "app.log"), "rotation": "1 day", "retention": "10 days", "compression": "zip", "format": log_format, "enqueue": True, "buffering": 4096},
+            {"sink": sys.stdout, "format": log_format, "level": log_level, "filter": debug_filter},
+            {"sink": str(logs_dir / "app.log"), "rotation": settings.LOG_ROTATION, "retention": "10 days", "compression": "zip", "format": log_format, "level": log_level, "enqueue": True, "buffering": 4096, "filter": debug_filter},
         ],
         levels=[{"name": "DEBUG", "color": "<blue>"}],
     )
@@ -44,5 +59,7 @@ def setup_logging():
     for _log in ['uvicorn', 'uvicorn.error', 'fastapi']:
         _logger = logging.getLogger(_log)
         _logger.handlers = [InterceptHandler()]
+        # 设置第三方库的日志级别为INFO，避免过多的DEBUG信息
+        _logger.setLevel(logging.INFO)
 
     return logger
