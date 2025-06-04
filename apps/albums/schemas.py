@@ -42,6 +42,7 @@ class AlbumBase(BaseModel):
     sort_order: int = Field(0, description="排序顺序")
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
+    location: Optional[str] = Field(None, description="拍摄地点")
     category_id: Optional[int] = Field(None, description="所属分类ID")
 
 class AlbumCreate(AlbumBase):
@@ -58,6 +59,7 @@ class AlbumUpdate(BaseModel):
     sort_order: Optional[int] = Field(None, description="排序顺序")
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
+    location: Optional[str] = Field(None, description="拍摄地点")
     category_id: Optional[int] = Field(None, description="所属分类ID")
 
 class AlbumResponse(AlbumBase):
@@ -80,6 +82,7 @@ class PhotoBase(BaseModel):
     sort_order: int = Field(0, description="排序顺序")
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
+    location: Optional[str] = Field(None, description="拍摄地点")
 
 class PhotoCreate(PhotoBase):
     """创建照片模型"""
@@ -93,6 +96,7 @@ class PhotoUpdate(BaseModel):
     sort_order: Optional[int] = Field(None, description="排序顺序")
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
+    location: Optional[str] = Field(None, description="拍摄地点")
 
 class PhotoResponse(PhotoBase):
     """照片响应模型"""
