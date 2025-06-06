@@ -34,6 +34,7 @@ class Album(models.Model):
     name = fields.CharField(max_length=255, description="相册名称")
     description = fields.TextField(description="相册描述", null=True)
     cover_image = fields.CharField(max_length=1024, description="封面图片URL", null=True)
+    filename = fields.CharField(max_length=255, description="文件名", null=True, editable=False)
     is_public = fields.BooleanField(default=True, description="是否公开")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")

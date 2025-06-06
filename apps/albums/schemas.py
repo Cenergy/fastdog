@@ -71,6 +71,7 @@ class AlbumResponse(AlbumBase):
     category: Optional[CategoryResponse] = Field(None, description="所属分类")
     thumbnail_url: Optional[str] = Field(None, description="缩略图URL")
     preview_url: Optional[str] = Field(None, description="预览图URL")
+    filename: Optional[str] = Field(None, description="文件名")
 
     class Config:
         from_attributes = True

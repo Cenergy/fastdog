@@ -351,6 +351,9 @@ class AlbumModelAdmin(TortoiseModelAdmin):
         "location": CharField(max_length=255, description="拍摄地点", required=False),
         "taken_at": WidgetType.DateTimePicker
     }
+    
+    # 排除字段，确保filename不在admin后台显示
+    exclude = ["filename"]
     formfield_overrides = {
         "cover_image": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"}),
     }
@@ -419,7 +422,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             file: 上传的文件对象或base64字符串
             
         Returns:
-            处理后的图片URL
+            处理后的预览图片URL
             
         Raises:
             ValueError: 当文件格式不支持或处理失败时
@@ -431,10 +434,16 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             if isinstance(file, UploadFile):
                 # 处理上传的文件
                 file_ext, unique_filename = process_upload_file(file)
-                file_path = os.path.join(upload_dir, unique_filename)
                 content = await file.read()
-                save_image_file(file_path, content)
-                return f"/static/uploads/albums/{unique_filename}"
+                
+                # 直接处理图片，不保存原始文件
+                image = Image.open(io.BytesIO(content))
+                dimensions = get_image_dimensions(image)
+                
+                # 生成缩略图和预览图，不保存原始文件
+                result = process_image(image, unique_filename.split('.')[0], upload_dir, dimensions["width"], dimensions["height"], file_ext)
+                # 返回预览图URL作为cover_image
+                return result["preview_url"]
                 
             elif isinstance(file, str):
                 if not self.is_valid_base64(file):
@@ -442,21 +451,15 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     
                 # 处理base64编码的图片
                 unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
-                file_path = os.path.join(upload_dir, f"{unique_filename}.{file_type}")
-                save_image_file(file_path, image_data)
                 
-                # 处理图片信息
+                # 直接处理图片，不保存原始文件
                 image = Image.open(io.BytesIO(image_data))
                 dimensions = get_image_dimensions(image)
                 
-                # 设置原始图片URL
-                original_url = f"/static/uploads/albums/{unique_filename}.{file_type}"
-                
-                # 生成缩略图和预览图
+                # 生成缩略图和预览图，不保存原始文件
                 result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"], f".{file_type}")
-                # 确保result中包含original_url
-                result["original_url"] = original_url
-                return original_url
+                # 返回预览图URL作为cover_image
+                return result["preview_url"]
             else:
                 raise ValueError("不支持的文件格式，仅支持文件上传或base64图片")
                 
@@ -477,6 +480,13 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 image_url = await self.process_cover_image(file)
                 payload["cover_image"] = image_url
                 print(f"处理后的封面图片URL: {image_url}")
+                
+                # 从图片URL中提取文件名并保存到filename字段（不包含扩展名）
+                if image_url:
+                    filename_with_ext = os.path.basename(image_url)
+                    filename = os.path.splitext(filename_with_ext)[0]  # 去掉扩展名
+                    payload["filename"] = filename
+                    print(f"提取的文件名（无扩展名）: {filename}")
                 
                 # 尝试从封面图片中提取EXIF数据
                 try:
