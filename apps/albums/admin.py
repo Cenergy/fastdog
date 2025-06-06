@@ -468,16 +468,52 @@ class AlbumModelAdmin(TortoiseModelAdmin):
 
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         try:
+            # 保存EXIF数据的变量
+            exif_data = None
+            
             if "cover_image" in payload and payload["cover_image"] is not None:
                 file = payload["cover_image"]
                 # 处理封面图片并确保正确赋值给payload
                 image_url = await self.process_cover_image(file)
                 payload["cover_image"] = image_url
                 print(f"处理后的封面图片URL: {image_url}")
+                
+                # 尝试从封面图片中提取EXIF数据
+                try:
+                    if isinstance(file, UploadFile):
+                        # 重新读取文件内容
+                        await file.seek(0)
+                        content = await file.read()
+                        image = Image.open(io.BytesIO(content))
+                        exif_data = extract_exif_data(image)
+                    elif isinstance(file, str) and self.is_valid_base64(file):
+                        # 从base64提取图片数据
+                        match = re.match(r'^data:image/(\w+);base64,(.+)$', file)
+                        if match:
+                            base64_data = match.group(2)
+                            content = base64.b64decode(base64_data)
+                            image = Image.open(io.BytesIO(content))
+                            exif_data = extract_exif_data(image)
+                    
+                    print(f"从封面图片提取的EXIF数据: {exif_data}")
+                except Exception as e:
+                    print(f"提取封面图片EXIF数据时出错: {str(e)}")
             
             # 确保cover_image字段被正确设置
             if "cover_image" in payload and payload["cover_image"] and isinstance(payload["cover_image"], str):
                 print(f"保存前的cover_image: {payload['cover_image']}")
+            
+            # 如果从图片中提取到了EXIF数据，更新payload中的相关字段
+            if exif_data:
+                # 只在用户没有手动设置这些字段时才使用EXIF数据
+                if "latitude" not in payload or payload["latitude"] is None:
+                    payload["latitude"] = exif_data.get("latitude")
+                if "longitude" not in payload or payload["longitude"] is None:
+                    payload["longitude"] = exif_data.get("longitude")
+                if "taken_at" not in payload or payload["taken_at"] is None:
+                    payload["taken_at"] = exif_data.get("taken_at")
+                
+                print(f"从EXIF更新的字段: 纬度={payload.get('latitude')}, 经度={payload.get('longitude')}, 拍摄时间={payload.get('taken_at')}")
             
             result = await super().save_model(id, payload)
             
@@ -491,6 +527,23 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     saved_album.cover_image = payload["cover_image"]
                     await saved_album.save()
                     print(f"更新后的album.cover_image: {saved_album.cover_image}")
+                
+                # 如果EXIF数据字段没有正确保存，尝试直接更新
+                needs_update = False
+                if exif_data:
+                    if "latitude" in exif_data and saved_album.latitude is None:
+                        saved_album.latitude = exif_data["latitude"]
+                        needs_update = True
+                    if "longitude" in exif_data and saved_album.longitude is None:
+                        saved_album.longitude = exif_data["longitude"]
+                        needs_update = True
+                    if "taken_at" in exif_data and saved_album.taken_at is None:
+                        saved_album.taken_at = exif_data["taken_at"]
+                        needs_update = True
+                
+                if needs_update:
+                    await saved_album.save()
+                    print(f"更新后的EXIF数据: 纬度={saved_album.latitude}, 经度={saved_album.longitude}, 拍摄时间={saved_album.taken_at}")
             
             return result
         except Exception as e:
