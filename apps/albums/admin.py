@@ -93,9 +93,9 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
         preview.thumbnail((1000, 1000), Image.LANCZOS)
         
         # 保存预览图
-        preview_filename = f"{unique_id}_preview.jpg"
+        preview_filename = f"{unique_id}_preview.webp"
         preview_path = os.path.join(upload_dir, preview_filename)
-        preview.convert("RGB").save(preview_path, "JPEG", quality=90)
+        preview.save(preview_path, "WEBP", quality=90)
         result["preview_url"] = f"/static/uploads/albums/{preview_filename}"
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
@@ -520,7 +520,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 dir_name = os.path.dirname(cover_path)
                 
                 # 删除预览图
-                preview_filename = f"{base_name}_preview.jpg"
+                preview_filename = f"{base_name}_preview.webp"
                 preview_path = os.path.join(dir_name, preview_filename)
                 if os.path.exists(preview_path):
                     print(f"删除预览图文件: {preview_path}")
@@ -838,9 +838,9 @@ class PhotoModelAdmin(CustomModelAdmin):
             preview.thumbnail((1000, 1000), Image.LANCZOS)
             
             # 保存预览图
-            preview_filename = f"{unique_id}_preview.jpg"
+            preview_filename = f"{unique_id}_preview.webp"
             preview_path = os.path.join(previews_dir, preview_filename)
-            preview.convert("RGB").save(preview_path, "JPEG", quality=90)
+            preview.save(preview_path, "WEBP", quality=90)
             result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
         else:
             # 如果原图小于预览图尺寸，则使用原图作为预览图
