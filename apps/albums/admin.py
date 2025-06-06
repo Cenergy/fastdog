@@ -1390,6 +1390,13 @@ class PhotoModelAdmin(CustomModelAdmin):
                                 print(f"删除关联的原始图片文件: {original_file_path}")
                                 os.remove(original_file_path)
             
+            # 删除缩略图
+            if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
+                thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
+                if os.path.exists(thumbnail_path):
+                    print(f"删除缩略图文件: {thumbnail_path}")
+                    os.remove(thumbnail_path)
+            
             # 删除预览图
             if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):
                 preview_path = os.path.join(settings.STATIC_DIR, photo.preview_url.replace('/static/', ''))
