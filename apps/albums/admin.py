@@ -230,8 +230,13 @@ def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
             # 提取拍摄时间
             if 36867 in exif:  # DateTimeOriginal
                 from datetime import datetime
+                import pytz
+                # 解析EXIF中的时间（通常是本地时间）
                 taken_at = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
-                exif_data["taken_at"] = taken_at.isoformat()
+                # 将时间设置为上海时区
+                shanghai_tz = pytz.timezone('Asia/Shanghai')
+                taken_at_shanghai = shanghai_tz.localize(taken_at)
+                exif_data["taken_at"] = taken_at_shanghai.isoformat()
     except Exception as e:
         print(f"提取EXIF数据时出错: {str(e)}")
     
@@ -734,8 +739,13 @@ class PhotoModelAdmin(CustomModelAdmin):
                 # 提取拍摄时间
                 if 36867 in exif:  # DateTimeOriginal
                     from datetime import datetime
+                    import pytz
+                    # 解析EXIF中的时间（通常是本地时间）
                     taken_at = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
-                    exif_data["taken_at"] = taken_at.isoformat()
+                    # 将时间设置为上海时区
+                    shanghai_tz = pytz.timezone('Asia/Shanghai')
+                    taken_at_shanghai = shanghai_tz.localize(taken_at)
+                    exif_data["taken_at"] = taken_at_shanghai.isoformat()
         except Exception as e:
             print(f"提取EXIF数据时出错: {str(e)}")
         
