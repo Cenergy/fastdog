@@ -157,7 +157,7 @@ def create_file_payload(unique_filename: str, payload: Dict[str, Any], file_type
         "description": payload.get("description"),
         "is_active": payload.get("is_active", True),
         "sort_order": payload.get("sort_order", 0),
-        "exif_data": {}  # 默认空字典
+        # 默认值设置
     }
 
 
@@ -219,13 +219,12 @@ def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
         image: PIL Image对象
         
     Returns:
-        包含EXIF数据的字典
+        包含提取的数据字典（taken_at, latitude, longitude等）
     """
-    exif_data = {}
+    result = {}
     try:
         if hasattr(image, '_getexif') and image._getexif() is not None:
             exif = image._getexif()
-            exif_data = {str(k): str(v) for k, v in exif.items()}
             
             # 提取拍摄时间
             if 36867 in exif:  # DateTimeOriginal
@@ -236,11 +235,36 @@ def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
                 # 将时间设置为上海时区
                 shanghai_tz = pytz.timezone('Asia/Shanghai')
                 taken_at_shanghai = shanghai_tz.localize(taken_at)
-                exif_data["taken_at"] = taken_at_shanghai.isoformat()
+                result["taken_at"] = taken_at_shanghai.isoformat()
+            
+            # 提取GPS信息
+            if 34853 in exif:  # GPSInfo
+                gps_info = exif[34853]
+                if gps_info:
+                    # 提取纬度
+                    if 2 in gps_info and 1 in gps_info:  # GPSLatitude and GPSLatitudeRef
+                        lat = gps_info[2]
+                        lat_ref = gps_info[1]
+                        if isinstance(lat, (list, tuple)) and len(lat) >= 3:
+                            latitude = lat[0] + lat[1]/60 + lat[2]/3600
+                            if lat_ref == 'S':
+                                latitude = -latitude
+                            result["latitude"] = latitude
+                    
+                    # 提取经度
+                    if 4 in gps_info and 3 in gps_info:  # GPSLongitude and GPSLongitudeRef
+                        lon = gps_info[4]
+                        lon_ref = gps_info[3]
+                        if isinstance(lon, (list, tuple)) and len(lon) >= 3:
+                            longitude = lon[0] + lon[1]/60 + lon[2]/3600
+                            if lon_ref == 'W':
+                                longitude = -longitude
+                            result["longitude"] = longitude
+                            
     except Exception as e:
         print(f"提取EXIF数据时出错: {str(e)}")
     
-    return exif_data
+    return result
 
 
 def get_image_dimensions(image: Image.Image) -> Dict[str, int]:
@@ -728,13 +752,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             image: PIL Image对象
             
         Returns:
-            包含EXIF数据的字典，如果没有EXIF数据则返回空字典
+            包含提取的数据字典（taken_at, latitude, longitude等）
         """
-        exif_data = {}
+        result = {}
         try:
             if hasattr(image, '_getexif') and image._getexif() is not None:
                 exif = image._getexif()
-                exif_data = {str(k): str(v) for k, v in exif.items()}
                 
                 # 提取拍摄时间
                 if 36867 in exif:  # DateTimeOriginal
@@ -745,11 +768,36 @@ class PhotoModelAdmin(CustomModelAdmin):
                     # 将时间设置为上海时区
                     shanghai_tz = pytz.timezone('Asia/Shanghai')
                     taken_at_shanghai = shanghai_tz.localize(taken_at)
-                    exif_data["taken_at"] = taken_at_shanghai.isoformat()
+                    result["taken_at"] = taken_at_shanghai.isoformat()
+                
+                # 提取GPS信息
+                if 34853 in exif:  # GPSInfo
+                    gps_info = exif[34853]
+                    if gps_info:
+                        # 提取纬度
+                        if 2 in gps_info and 1 in gps_info:  # GPSLatitude and GPSLatitudeRef
+                            lat = gps_info[2]
+                            lat_ref = gps_info[1]
+                            if isinstance(lat, (list, tuple)) and len(lat) >= 3:
+                                latitude = lat[0] + lat[1]/60 + lat[2]/3600
+                                if lat_ref == 'S':
+                                    latitude = -latitude
+                                result["latitude"] = latitude
+                        
+                        # 提取经度
+                        if 4 in gps_info and 3 in gps_info:  # GPSLongitude and GPSLongitudeRef
+                            lon = gps_info[4]
+                            lon_ref = gps_info[3]
+                            if isinstance(lon, (list, tuple)) and len(lon) >= 3:
+                                longitude = lon[0] + lon[1]/60 + lon[2]/3600
+                                if lon_ref == 'W':
+                                    longitude = -longitude
+                                result["longitude"] = longitude
+                                
         except Exception as e:
             print(f"提取EXIF数据时出错: {str(e)}")
         
-        return exif_data
+        return result
     
     def process_photo_image(self, image: Image.Image, unique_id: str, upload_dir: str, thumbnails_dir: str, previews_dir: str, width: int, height: int, file_ext: str = '.jpg') -> dict:
         """处理图片，生成缩略图和预览图，保持横竖比例
@@ -823,7 +871,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             "description": payload.get("description"),
             "is_active": payload.get("is_active", True),
             "sort_order": payload.get("sort_order", 0),
-            "exif_data": {}
+            # GPS和时间信息从EXIF动态提取
         }
         
         # 设置原始URL
@@ -931,9 +979,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             # 提取EXIF数据
             exif_data = self.extract_exif_data(image)
             if exif_data:
-                file_payload["exif_data"] = exif_data
                 if "taken_at" in exif_data:
                     file_payload["taken_at"] = exif_data["taken_at"]
+                if "latitude" in exif_data:
+                    file_payload["latitude"] = exif_data["latitude"]
+                if "longitude" in exif_data:
+                    file_payload["longitude"] = exif_data["longitude"]
             
             # 处理图片并生成缩略图和预览图
             result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height, f".{file_type}")
@@ -1012,9 +1063,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             # 提取EXIF数据
             exif_data = self.extract_exif_data(image)
             if exif_data:
-                file_payload["exif_data"] = exif_data
                 if "taken_at" in exif_data:
                     file_payload["taken_at"] = exif_data["taken_at"]
+                if "latitude" in exif_data:
+                    file_payload["latitude"] = exif_data["latitude"]
+                if "longitude" in exif_data:
+                    file_payload["longitude"] = exif_data["longitude"]
             
             # 处理图片并生成缩略图和预览图
             result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height, file_ext)
@@ -1055,9 +1109,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             payload["original_url"] = [payload["original_url"]]
             print("格式化：将原图URL转换为列表格式")
         
-        # 确保exif_data是字典类型
-        if "exif_data" not in payload or payload["exif_data"] is None:
-            payload["exif_data"] = {}
+        # 数据预处理完成
         
         # 设置默认值
         if "original_url" not in payload or payload["original_url"] is None:
