@@ -69,6 +69,8 @@ class AlbumResponse(AlbumBase):
     updated_at: datetime
     photo_count: Optional[int] = Field(0, description="照片数量")
     category: Optional[CategoryResponse] = Field(None, description="所属分类")
+    thumbnail_url: Optional[str] = Field(None, description="缩略图URL")
+    preview_url: Optional[str] = Field(None, description="预览图URL")
 
     class Config:
         from_attributes = True

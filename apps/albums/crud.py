@@ -1,9 +1,32 @@
-from tortoise.expressions import Q
+from tortoise.queryset import Q
 from tortoise.functions import Count
 from typing import List, Optional, Dict, Any, Union
+import os
 
 from apps.albums.models import Album, Photo, AlbumCategory
 from apps.albums.schemas import AlbumCreate, AlbumUpdate, PhotoCreate, PhotoUpdate, CategoryCreate, CategoryUpdate
+
+
+def generate_album_urls(album: Album) -> None:
+    """为相册生成缩略图和预览图URL"""
+    if album.cover_image:
+        # 基于封面图片生成缩略图和预览图URL
+        cover_path = album.cover_image
+        if cover_path.startswith('/static/uploads/'):
+            # 提取文件名（不含扩展名）
+            filename = os.path.splitext(cover_path)[0]
+            # 生成缩略图URL (添加_thumbnail.jpg后缀，与admin.py中的命名一致)
+            album.thumbnail_url = f"{filename}_thumbnail.jpg"
+            # 生成预览图URL (添加_preview.webp后缀，与admin.py中的命名一致)
+            album.preview_url = f"{filename}_preview.webp"
+        else:
+            # 如果不是标准上传路径，使用原图作为缩略图和预览图
+            album.thumbnail_url = cover_path
+            album.preview_url = cover_path
+    else:
+        # 没有封面图片时使用默认图片
+        album.thumbnail_url = "/static/default.png"
+        album.preview_url = "/static/default.png"
 
 # 分类 CRUD操作
 async def get_category(category_id: int) -> Optional[AlbumCategory]:
@@ -57,7 +80,10 @@ async def delete_category(category_id: int) -> bool:
 # Album CRUD操作
 async def get_album(album_id: int) -> Optional[Album]:
     """获取单个相册"""
-    return await Album.get_or_none(id=album_id)
+    album = await Album.get_or_none(id=album_id)
+    if album:
+        generate_album_urls(album)
+    return album
 
 async def get_albums(
     skip: int = 0,
@@ -80,7 +106,13 @@ async def get_albums(
     if with_photo_count:
         query = query.annotate(photo_count=Count('photos'))
     
-    return await query.order_by('-created_at').offset(skip).limit(limit).all()
+    albums = await query.order_by('-created_at').offset(skip).limit(limit).all()
+    
+    # 为每个相册生成缩略图和预览图URL
+    for album in albums:
+        generate_album_urls(album)
+    
+    return albums
 
 async def create_album(album_data: AlbumCreate) -> Album:
     """创建相册"""
@@ -201,4 +233,10 @@ async def get_albums_by_coordinates(
     if is_public is not None:
         query = query.filter(is_public=is_public)
     
-    return await query.order_by('-created_at').offset(skip).limit(limit).all()
+    albums = await query.order_by('-created_at').offset(skip).limit(limit).all()
+    
+    # 为每个相册生成缩略图和预览图URL
+    for album in albums:
+        generate_album_urls(album)
+    
+    return albums
