@@ -13,6 +13,10 @@ from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
 from typing import Optional, Dict, Any, List, Tuple
 
+# 预览图最大尺寸常量
+PREVIEW_MAX_SIZE = 1500
+# 缩略图最大尺寸常量
+THUMBNAIL_MAX_SIZE = 200
 
 
 class CustomModelAdmin(TortoiseModelAdmin):
@@ -78,7 +82,7 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     # 生成缩略图 (最大边200px，保持横竖比例)
     # 使用thumbnail方法自动保持比例
     thumbnail = image.copy()
-    thumbnail.thumbnail((200, 200), Image.LANCZOS)
+    thumbnail.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE), Image.LANCZOS)
     
     # 保存缩略图
     thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -86,11 +90,11 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
     result["thumbnail_url"] = f"/static/uploads/albums/{thumbnail_filename}"
     
-    # 生成预览图 (最大边1000px，保持横竖比例)
-    if width > 1000 or height > 1000:
+    # 生成预览图 (最大边1500px，保持横竖比例)
+    if width > PREVIEW_MAX_SIZE or height > PREVIEW_MAX_SIZE:
         # 使用thumbnail方法自动保持比例
         preview = image.copy()
-        preview.thumbnail((1000, 1000), Image.LANCZOS)
+        preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE), Image.LANCZOS)
         
         # 保存预览图
         preview_filename = f"{unique_id}_preview.webp"
@@ -823,7 +827,7 @@ class PhotoModelAdmin(CustomModelAdmin):
         # 生成缩略图 (最大边200px，保持横竖比例)
         # 使用thumbnail方法自动保持比例
         thumbnail = image.copy()
-        thumbnail.thumbnail((200, 200), Image.LANCZOS)
+        thumbnail.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE), Image.LANCZOS)
         
         # 保存缩略图
         thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -831,11 +835,11 @@ class PhotoModelAdmin(CustomModelAdmin):
         thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
         result["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
         
-        # 生成预览图 (最大边1000px，保持横竖比例)
-        if width > 1000 or height > 1000:
+        # 生成预览图 (最大边1500px，保持横竖比例)
+        if width > PREVIEW_MAX_SIZE or height > PREVIEW_MAX_SIZE:
             # 使用thumbnail方法自动保持比例
             preview = image.copy()
-            preview.thumbnail((1000, 1000), Image.LANCZOS)
+            preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE), Image.LANCZOS)
             
             # 保存预览图
             preview_filename = f"{unique_id}_preview.webp"
