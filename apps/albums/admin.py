@@ -7,7 +7,7 @@ from uuid import UUID
 import os
 import re
 import base64
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 import io
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
@@ -56,7 +56,7 @@ class CustomModelAdmin(TortoiseModelAdmin):
 
 
 def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int,file_ext:str='.png') -> Dict[str, Any]:
-    """处理图片，生成缩略图和预览图
+    """处理图片，生成缩略图和预览图，保持横竖比例
     
     Args:
         image: PIL Image对象
@@ -72,10 +72,13 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     result = {}
     # 注意：这里不设置original_url，应该由调用方提供
     
-    # 生成缩略图 (200px宽)
-    thumbnail_size = (200, int(200 * height / width))
+    # 首先处理EXIF旋转信息，确保图片方向正确
+    image = ImageOps.exif_transpose(image)
+    
+    # 生成缩略图 (最大边200px，保持横竖比例)
+    # 使用thumbnail方法自动保持比例
     thumbnail = image.copy()
-    thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
+    thumbnail.thumbnail((200, 200), Image.LANCZOS)
     
     # 保存缩略图
     thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -83,11 +86,11 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
     result["thumbnail_url"] = f"/static/uploads/albums/{thumbnail_filename}"
     
-    # 生成预览图 (1000px宽)
-    if width > 1000:
-        preview_size = (1000, int(1000 * height / width))
+    # 生成预览图 (最大边1000px，保持横竖比例)
+    if width > 1000 or height > 1000:
+        # 使用thumbnail方法自动保持比例
         preview = image.copy()
-        preview.thumbnail(preview_size, Image.LANCZOS)
+        preview.thumbnail((1000, 1000), Image.LANCZOS)
         
         # 保存预览图
         preview_filename = f"{unique_id}_preview.jpg"
@@ -739,7 +742,7 @@ class PhotoModelAdmin(CustomModelAdmin):
         return exif_data
     
     def process_photo_image(self, image: Image.Image, unique_id: str, upload_dir: str, thumbnails_dir: str, previews_dir: str, width: int, height: int, file_ext: str = '.jpg') -> dict:
-        """处理图片，生成缩略图和预览图
+        """处理图片，生成缩略图和预览图，保持横竖比例
         
         Args:
             image: PIL Image对象
@@ -756,10 +759,13 @@ class PhotoModelAdmin(CustomModelAdmin):
         """
         result = {}
         
-        # 生成缩略图 (200px宽)
-        thumbnail_size = (200, int(200 * height / width))
+        # 首先处理EXIF旋转信息，确保图片方向正确
+        image = ImageOps.exif_transpose(image)
+        
+        # 生成缩略图 (最大边200px，保持横竖比例)
+        # 使用thumbnail方法自动保持比例
         thumbnail = image.copy()
-        thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
+        thumbnail.thumbnail((200, 200), Image.LANCZOS)
         
         # 保存缩略图
         thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -767,11 +773,11 @@ class PhotoModelAdmin(CustomModelAdmin):
         thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
         result["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
         
-        # 生成预览图 (1000px宽)
-        if width > 1000:
-            preview_size = (1000, int(1000 * height / width))
+        # 生成预览图 (最大边1000px，保持横竖比例)
+        if width > 1000 or height > 1000:
+            # 使用thumbnail方法自动保持比例
             preview = image.copy()
-            preview.thumbnail(preview_size, Image.LANCZOS)
+            preview.thumbnail((1000, 1000), Image.LANCZOS)
             
             # 保存预览图
             preview_filename = f"{unique_id}_preview.jpg"
