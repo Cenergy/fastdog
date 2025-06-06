@@ -881,9 +881,10 @@ class PhotoModelAdmin(CustomModelAdmin):
         # 设置原始URL
         if original_url:
             file_payload["original_url"] = [original_url] if isinstance(original_url, str) else original_url
-        elif unique_id and file_type:
+        elif unique_id and file_type and settings.SAVE_ORIGINAL_PHOTOS:
             file_payload["original_url"] = [f"/static/uploads/photos/{unique_id}.{file_type}"]
         else:
+            # 当不保存原始文件时，使用默认图片或空值
             file_payload["original_url"] = ["/static/default.png"]
         
         # 设置原始文件名
@@ -962,9 +963,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             content = base64.b64decode(base64_data)
             file_path = os.path.join(upload_dir, unique_filename)
             
-            # 保存原始图片文件
-            save_image_file(file_path, content)
-            print(f"原始图片已保存到：{file_path}")
+            # 根据配置决定是否保存原始图片文件
+            if settings.SAVE_ORIGINAL_PHOTOS:
+                save_image_file(file_path, content)
+                print(f"原始图片已保存到：{file_path}")
+            else:
+                print("根据配置，跳过保存原始图片文件")
             
             # 创建并更新图片元数据
             file_payload = self.create_photo_payload(payload, file_type, content, unique_id)
@@ -1039,11 +1043,15 @@ class PhotoModelAdmin(CustomModelAdmin):
         # 读取文件内容
         content = await file.read()
         
-        # 保存文件
-        with open(file_path, "wb") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
+        # 根据配置决定是否保存原始文件
+        if settings.SAVE_ORIGINAL_PHOTOS:
+            with open(file_path, "wb") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            print(f"原始文件已保存到：{file_path}")
+        else:
+            print("根据配置，跳过保存原始文件")
         
         # 创建照片数据载荷
         file_type = file_ext[1:].lower()  # 去掉点号

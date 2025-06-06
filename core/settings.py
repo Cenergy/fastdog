@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     ALLOWED_UPLOAD_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx"]
     CONVERTERS_HANDLE_MAX_EXCEL_SIZE: int = 5 * 1024 * 1024  # 5MB
     
+    # 图片处理配置
+    SAVE_ORIGINAL_PHOTOS: bool = False  # 是否保存原始图片文件，默认不保存
+    
     # 坐标转换线程池设置
     CONVERTERS_THREAD_POOL_THRESHOLD: int = 1000  # 启用线程池的数据行数阈值
     CONVERTERS_THREAD_POOL_WORKERS: int = 4  # 线程池工作线程数
