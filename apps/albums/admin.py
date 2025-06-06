@@ -7,12 +7,16 @@ from uuid import UUID
 import os
 import re
 import base64
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 import io
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
 from typing import Optional, Dict, Any, List, Tuple
 
+# 预览图最大尺寸常量
+PREVIEW_MAX_SIZE = 1500
+# 缩略图最大尺寸常量
+THUMBNAIL_MAX_SIZE = 200
 
 
 class CustomModelAdmin(TortoiseModelAdmin):
@@ -56,7 +60,7 @@ class CustomModelAdmin(TortoiseModelAdmin):
 
 
 def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: int, height: int,file_ext:str='.png') -> Dict[str, Any]:
-    """处理图片，生成缩略图和预览图
+    """处理图片，生成缩略图和预览图，保持横竖比例
     
     Args:
         image: PIL Image对象
@@ -72,10 +76,13 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     result = {}
     # 注意：这里不设置original_url，应该由调用方提供
     
-    # 生成缩略图 (200px宽)
-    thumbnail_size = (200, int(200 * height / width))
+    # 首先处理EXIF旋转信息，确保图片方向正确
+    image = ImageOps.exif_transpose(image)
+    
+    # 生成缩略图 (最大边200px，保持横竖比例)
+    # 使用thumbnail方法自动保持比例
     thumbnail = image.copy()
-    thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
+    thumbnail.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE), Image.LANCZOS)
     
     # 保存缩略图
     thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -83,16 +90,16 @@ def process_image(image: Image.Image, unique_id: str, upload_dir: str, width: in
     thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
     result["thumbnail_url"] = f"/static/uploads/albums/{thumbnail_filename}"
     
-    # 生成预览图 (1000px宽)
-    if width > 1000:
-        preview_size = (1000, int(1000 * height / width))
+    # 生成预览图 (最大边1500px，保持横竖比例)
+    if width > PREVIEW_MAX_SIZE or height > PREVIEW_MAX_SIZE:
+        # 使用thumbnail方法自动保持比例
         preview = image.copy()
-        preview.thumbnail(preview_size, Image.LANCZOS)
+        preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE), Image.LANCZOS)
         
         # 保存预览图
-        preview_filename = f"{unique_id}_preview.jpg"
+        preview_filename = f"{unique_id}_preview.webp"
         preview_path = os.path.join(upload_dir, preview_filename)
-        preview.convert("RGB").save(preview_path, "JPEG", quality=90)
+        preview.save(preview_path, "WEBP", quality=90)
         result["preview_url"] = f"/static/uploads/albums/{preview_filename}"
     else:
         # 如果原图小于预览图尺寸，则使用原图作为预览图
@@ -154,7 +161,7 @@ def create_file_payload(unique_filename: str, payload: Dict[str, Any], file_type
         "description": payload.get("description"),
         "is_active": payload.get("is_active", True),
         "sort_order": payload.get("sort_order", 0),
-        "exif_data": {}  # 默认空字典
+        # 默认值设置
     }
 
 
@@ -216,23 +223,52 @@ def extract_exif_data(image: Image.Image) -> Dict[str, Any]:
         image: PIL Image对象
         
     Returns:
-        包含EXIF数据的字典
+        包含提取的数据字典（taken_at, latitude, longitude等）
     """
-    exif_data = {}
+    result = {}
     try:
         if hasattr(image, '_getexif') and image._getexif() is not None:
             exif = image._getexif()
-            exif_data = {str(k): str(v) for k, v in exif.items()}
             
             # 提取拍摄时间
             if 36867 in exif:  # DateTimeOriginal
                 from datetime import datetime
+                import pytz
+                # 解析EXIF中的时间（通常是本地时间）
                 taken_at = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
-                exif_data["taken_at"] = taken_at.isoformat()
+                # 将时间设置为上海时区
+                shanghai_tz = pytz.timezone('Asia/Shanghai')
+                taken_at_shanghai = shanghai_tz.localize(taken_at)
+                result["taken_at"] = taken_at_shanghai.isoformat()
+            
+            # 提取GPS信息
+            if 34853 in exif:  # GPSInfo
+                gps_info = exif[34853]
+                if gps_info:
+                    # 提取纬度
+                    if 2 in gps_info and 1 in gps_info:  # GPSLatitude and GPSLatitudeRef
+                        lat = gps_info[2]
+                        lat_ref = gps_info[1]
+                        if isinstance(lat, (list, tuple)) and len(lat) >= 3:
+                            latitude = lat[0] + lat[1]/60 + lat[2]/3600
+                            if lat_ref == 'S':
+                                latitude = -latitude
+                            result["latitude"] = latitude
+                    
+                    # 提取经度
+                    if 4 in gps_info and 3 in gps_info:  # GPSLongitude and GPSLongitudeRef
+                        lon = gps_info[4]
+                        lon_ref = gps_info[3]
+                        if isinstance(lon, (list, tuple)) and len(lon) >= 3:
+                            longitude = lon[0] + lon[1]/60 + lon[2]/3600
+                            if lon_ref == 'W':
+                                longitude = -longitude
+                            result["longitude"] = longitude
+                            
     except Exception as e:
         print(f"提取EXIF数据时出错: {str(e)}")
     
-    return exif_data
+    return result
 
 
 def get_image_dimensions(image: Image.Image) -> Dict[str, int]:
@@ -315,6 +351,9 @@ class AlbumModelAdmin(TortoiseModelAdmin):
         "location": CharField(max_length=255, description="拍摄地点", required=False),
         "taken_at": WidgetType.DateTimePicker
     }
+    
+    # 排除字段，确保filename不在admin后台显示
+    exclude = ["filename"]
     formfield_overrides = {
         "cover_image": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"}),
     }
@@ -383,7 +422,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             file: 上传的文件对象或base64字符串
             
         Returns:
-            处理后的图片URL
+            处理后的预览图片URL
             
         Raises:
             ValueError: 当文件格式不支持或处理失败时
@@ -395,10 +434,16 @@ class AlbumModelAdmin(TortoiseModelAdmin):
             if isinstance(file, UploadFile):
                 # 处理上传的文件
                 file_ext, unique_filename = process_upload_file(file)
-                file_path = os.path.join(upload_dir, unique_filename)
                 content = await file.read()
-                save_image_file(file_path, content)
-                return f"/static/uploads/albums/{unique_filename}"
+                
+                # 直接处理图片，不保存原始文件
+                image = Image.open(io.BytesIO(content))
+                dimensions = get_image_dimensions(image)
+                
+                # 生成缩略图和预览图，不保存原始文件
+                result = process_image(image, unique_filename.split('.')[0], upload_dir, dimensions["width"], dimensions["height"], file_ext)
+                # 返回预览图URL作为cover_image
+                return result["preview_url"]
                 
             elif isinstance(file, str):
                 if not self.is_valid_base64(file):
@@ -406,21 +451,15 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     
                 # 处理base64编码的图片
                 unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
-                file_path = os.path.join(upload_dir, f"{unique_filename}.{file_type}")
-                save_image_file(file_path, image_data)
                 
-                # 处理图片信息
+                # 直接处理图片，不保存原始文件
                 image = Image.open(io.BytesIO(image_data))
                 dimensions = get_image_dimensions(image)
                 
-                # 设置原始图片URL
-                original_url = f"/static/uploads/albums/{unique_filename}.{file_type}"
-                
-                # 生成缩略图和预览图
+                # 生成缩略图和预览图，不保存原始文件
                 result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"], f".{file_type}")
-                # 确保result中包含original_url
-                result["original_url"] = original_url
-                return original_url
+                # 返回预览图URL作为cover_image
+                return result["preview_url"]
             else:
                 raise ValueError("不支持的文件格式，仅支持文件上传或base64图片")
                 
@@ -432,16 +471,59 @@ class AlbumModelAdmin(TortoiseModelAdmin):
 
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         try:
+            # 保存EXIF数据的变量
+            exif_data = None
+            
             if "cover_image" in payload and payload["cover_image"] is not None:
                 file = payload["cover_image"]
                 # 处理封面图片并确保正确赋值给payload
                 image_url = await self.process_cover_image(file)
                 payload["cover_image"] = image_url
                 print(f"处理后的封面图片URL: {image_url}")
+                
+                # 从图片URL中提取文件名并保存到filename字段（不包含扩展名）
+                if image_url:
+                    filename_with_ext = os.path.basename(image_url)
+                    filename = os.path.splitext(filename_with_ext)[0]  # 去掉扩展名
+                    payload["filename"] = filename
+                    print(f"提取的文件名（无扩展名）: {filename}")
+                
+                # 尝试从封面图片中提取EXIF数据
+                try:
+                    if isinstance(file, UploadFile):
+                        # 重新读取文件内容
+                        await file.seek(0)
+                        content = await file.read()
+                        image = Image.open(io.BytesIO(content))
+                        exif_data = extract_exif_data(image)
+                    elif isinstance(file, str) and self.is_valid_base64(file):
+                        # 从base64提取图片数据
+                        match = re.match(r'^data:image/(\w+);base64,(.+)$', file)
+                        if match:
+                            base64_data = match.group(2)
+                            content = base64.b64decode(base64_data)
+                            image = Image.open(io.BytesIO(content))
+                            exif_data = extract_exif_data(image)
+                    
+                    print(f"从封面图片提取的EXIF数据: {exif_data}")
+                except Exception as e:
+                    print(f"提取封面图片EXIF数据时出错: {str(e)}")
             
             # 确保cover_image字段被正确设置
             if "cover_image" in payload and payload["cover_image"] and isinstance(payload["cover_image"], str):
                 print(f"保存前的cover_image: {payload['cover_image']}")
+            
+            # 如果从图片中提取到了EXIF数据，更新payload中的相关字段
+            if exif_data:
+                # 只在用户没有手动设置这些字段时才使用EXIF数据
+                if "latitude" not in payload or payload["latitude"] is None:
+                    payload["latitude"] = exif_data.get("latitude")
+                if "longitude" not in payload or payload["longitude"] is None:
+                    payload["longitude"] = exif_data.get("longitude")
+                if "taken_at" not in payload or payload["taken_at"] is None:
+                    payload["taken_at"] = exif_data.get("taken_at")
+                
+                print(f"从EXIF更新的字段: 纬度={payload.get('latitude')}, 经度={payload.get('longitude')}, 拍摄时间={payload.get('taken_at')}")
             
             result = await super().save_model(id, payload)
             
@@ -455,6 +537,23 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                     saved_album.cover_image = payload["cover_image"]
                     await saved_album.save()
                     print(f"更新后的album.cover_image: {saved_album.cover_image}")
+                
+                # 如果EXIF数据字段没有正确保存，尝试直接更新
+                needs_update = False
+                if exif_data:
+                    if "latitude" in exif_data and saved_album.latitude is None:
+                        saved_album.latitude = exif_data["latitude"]
+                        needs_update = True
+                    if "longitude" in exif_data and saved_album.longitude is None:
+                        saved_album.longitude = exif_data["longitude"]
+                        needs_update = True
+                    if "taken_at" in exif_data and saved_album.taken_at is None:
+                        saved_album.taken_at = exif_data["taken_at"]
+                        needs_update = True
+                
+                if needs_update:
+                    await saved_album.save()
+                    print(f"更新后的EXIF数据: 纬度={saved_album.latitude}, 经度={saved_album.longitude}, 拍摄时间={saved_album.taken_at}")
             
             return result
         except Exception as e:
@@ -488,7 +587,7 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 dir_name = os.path.dirname(cover_path)
                 
                 # 删除预览图
-                preview_filename = f"{base_name}_preview.jpg"
+                preview_filename = f"{base_name}_preview.webp"
                 preview_path = os.path.join(dir_name, preview_filename)
                 if os.path.exists(preview_path):
                     print(f"删除预览图文件: {preview_path}")
@@ -720,26 +819,55 @@ class PhotoModelAdmin(CustomModelAdmin):
             image: PIL Image对象
             
         Returns:
-            包含EXIF数据的字典，如果没有EXIF数据则返回空字典
+            包含提取的数据字典（taken_at, latitude, longitude等）
         """
-        exif_data = {}
+        result = {}
         try:
             if hasattr(image, '_getexif') and image._getexif() is not None:
                 exif = image._getexif()
-                exif_data = {str(k): str(v) for k, v in exif.items()}
                 
                 # 提取拍摄时间
                 if 36867 in exif:  # DateTimeOriginal
                     from datetime import datetime
+                    import pytz
+                    # 解析EXIF中的时间（通常是本地时间）
                     taken_at = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
-                    exif_data["taken_at"] = taken_at.isoformat()
+                    # 将时间设置为上海时区
+                    shanghai_tz = pytz.timezone('Asia/Shanghai')
+                    taken_at_shanghai = shanghai_tz.localize(taken_at)
+                    result["taken_at"] = taken_at_shanghai.isoformat()
+                
+                # 提取GPS信息
+                if 34853 in exif:  # GPSInfo
+                    gps_info = exif[34853]
+                    if gps_info:
+                        # 提取纬度
+                        if 2 in gps_info and 1 in gps_info:  # GPSLatitude and GPSLatitudeRef
+                            lat = gps_info[2]
+                            lat_ref = gps_info[1]
+                            if isinstance(lat, (list, tuple)) and len(lat) >= 3:
+                                latitude = lat[0] + lat[1]/60 + lat[2]/3600
+                                if lat_ref == 'S':
+                                    latitude = -latitude
+                                result["latitude"] = latitude
+                        
+                        # 提取经度
+                        if 4 in gps_info and 3 in gps_info:  # GPSLongitude and GPSLongitudeRef
+                            lon = gps_info[4]
+                            lon_ref = gps_info[3]
+                            if isinstance(lon, (list, tuple)) and len(lon) >= 3:
+                                longitude = lon[0] + lon[1]/60 + lon[2]/3600
+                                if lon_ref == 'W':
+                                    longitude = -longitude
+                                result["longitude"] = longitude
+                                
         except Exception as e:
             print(f"提取EXIF数据时出错: {str(e)}")
         
-        return exif_data
+        return result
     
     def process_photo_image(self, image: Image.Image, unique_id: str, upload_dir: str, thumbnails_dir: str, previews_dir: str, width: int, height: int, file_ext: str = '.jpg') -> dict:
-        """处理图片，生成缩略图和预览图
+        """处理图片，生成缩略图和预览图，保持横竖比例
         
         Args:
             image: PIL Image对象
@@ -756,10 +884,13 @@ class PhotoModelAdmin(CustomModelAdmin):
         """
         result = {}
         
-        # 生成缩略图 (200px宽)
-        thumbnail_size = (200, int(200 * height / width))
+        # 首先处理EXIF旋转信息，确保图片方向正确
+        image = ImageOps.exif_transpose(image)
+        
+        # 生成缩略图 (最大边200px，保持横竖比例)
+        # 使用thumbnail方法自动保持比例
         thumbnail = image.copy()
-        thumbnail.thumbnail(thumbnail_size, Image.LANCZOS)
+        thumbnail.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE), Image.LANCZOS)
         
         # 保存缩略图
         thumbnail_filename = f"{unique_id}_thumbnail.jpg"
@@ -767,16 +898,16 @@ class PhotoModelAdmin(CustomModelAdmin):
         thumbnail.convert("RGB").save(thumbnail_path, "JPEG", quality=85)
         result["thumbnail_url"] = f"/static/uploads/photos/thumbnails/{thumbnail_filename}"
         
-        # 生成预览图 (1000px宽)
-        if width > 1000:
-            preview_size = (1000, int(1000 * height / width))
+        # 生成预览图 (最大边1500px，保持横竖比例)
+        if width > PREVIEW_MAX_SIZE or height > PREVIEW_MAX_SIZE:
+            # 使用thumbnail方法自动保持比例
             preview = image.copy()
-            preview.thumbnail(preview_size, Image.LANCZOS)
+            preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE), Image.LANCZOS)
             
             # 保存预览图
-            preview_filename = f"{unique_id}_preview.jpg"
+            preview_filename = f"{unique_id}_preview.webp"
             preview_path = os.path.join(previews_dir, preview_filename)
-            preview.convert("RGB").save(preview_path, "JPEG", quality=90)
+            preview.save(preview_path, "WEBP", quality=90)
             result["preview_url"] = f"/static/uploads/photos/previews/{preview_filename}"
         else:
             # 如果原图小于预览图尺寸，则使用原图作为预览图
@@ -807,15 +938,16 @@ class PhotoModelAdmin(CustomModelAdmin):
             "description": payload.get("description"),
             "is_active": payload.get("is_active", True),
             "sort_order": payload.get("sort_order", 0),
-            "exif_data": {}
+            # GPS和时间信息从EXIF动态提取
         }
         
         # 设置原始URL
         if original_url:
             file_payload["original_url"] = [original_url] if isinstance(original_url, str) else original_url
-        elif unique_id and file_type:
+        elif unique_id and file_type and settings.SAVE_ORIGINAL_PHOTOS:
             file_payload["original_url"] = [f"/static/uploads/photos/{unique_id}.{file_type}"]
         else:
+            # 当不保存原始文件时，使用默认图片或空值
             file_payload["original_url"] = ["/static/default.png"]
         
         # 设置原始文件名
@@ -894,9 +1026,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             content = base64.b64decode(base64_data)
             file_path = os.path.join(upload_dir, unique_filename)
             
-            # 保存原始图片文件
-            save_image_file(file_path, content)
-            print(f"原始图片已保存到：{file_path}")
+            # 根据配置决定是否保存原始图片文件
+            if settings.SAVE_ORIGINAL_PHOTOS:
+                save_image_file(file_path, content)
+                print(f"原始图片已保存到：{file_path}")
+            else:
+                print("根据配置，跳过保存原始图片文件")
             
             # 创建并更新图片元数据
             file_payload = self.create_photo_payload(payload, file_type, content, unique_id)
@@ -915,9 +1050,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             # 提取EXIF数据
             exif_data = self.extract_exif_data(image)
             if exif_data:
-                file_payload["exif_data"] = exif_data
                 if "taken_at" in exif_data:
                     file_payload["taken_at"] = exif_data["taken_at"]
+                if "latitude" in exif_data:
+                    file_payload["latitude"] = exif_data["latitude"]
+                if "longitude" in exif_data:
+                    file_payload["longitude"] = exif_data["longitude"]
             
             # 处理图片并生成缩略图和预览图
             result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height, f".{file_type}")
@@ -968,11 +1106,15 @@ class PhotoModelAdmin(CustomModelAdmin):
         # 读取文件内容
         content = await file.read()
         
-        # 保存文件
-        with open(file_path, "wb") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
+        # 根据配置决定是否保存原始文件
+        if settings.SAVE_ORIGINAL_PHOTOS:
+            with open(file_path, "wb") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            print(f"原始文件已保存到：{file_path}")
+        else:
+            print("根据配置，跳过保存原始文件")
         
         # 创建照片数据载荷
         file_type = file_ext[1:].lower()  # 去掉点号
@@ -996,9 +1138,12 @@ class PhotoModelAdmin(CustomModelAdmin):
             # 提取EXIF数据
             exif_data = self.extract_exif_data(image)
             if exif_data:
-                file_payload["exif_data"] = exif_data
                 if "taken_at" in exif_data:
                     file_payload["taken_at"] = exif_data["taken_at"]
+                if "latitude" in exif_data:
+                    file_payload["latitude"] = exif_data["latitude"]
+                if "longitude" in exif_data:
+                    file_payload["longitude"] = exif_data["longitude"]
             
             # 处理图片并生成缩略图和预览图
             result = self.process_photo_image(image, unique_id, upload_dir, thumbnails_dir, previews_dir, width, height, file_ext)
@@ -1039,9 +1184,7 @@ class PhotoModelAdmin(CustomModelAdmin):
             payload["original_url"] = [payload["original_url"]]
             print("格式化：将原图URL转换为列表格式")
         
-        # 确保exif_data是字典类型
-        if "exif_data" not in payload or payload["exif_data"] is None:
-            payload["exif_data"] = {}
+        # 数据预处理完成
         
         # 设置默认值
         if "original_url" not in payload or payload["original_url"] is None:
@@ -1383,6 +1526,13 @@ class PhotoModelAdmin(CustomModelAdmin):
                             if os.path.exists(original_file_path):
                                 print(f"删除关联的原始图片文件: {original_file_path}")
                                 os.remove(original_file_path)
+            
+            # 删除缩略图
+            if photo.thumbnail_url and photo.thumbnail_url.startswith('/static/uploads/'):
+                thumbnail_path = os.path.join(settings.STATIC_DIR, photo.thumbnail_url.replace('/static/', ''))
+                if os.path.exists(thumbnail_path):
+                    print(f"删除缩略图文件: {thumbnail_path}")
+                    os.remove(thumbnail_path)
             
             # 删除预览图
             if photo.preview_url and photo.preview_url.startswith('/static/uploads/'):

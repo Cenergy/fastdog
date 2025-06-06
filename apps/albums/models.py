@@ -34,6 +34,7 @@ class Album(models.Model):
     name = fields.CharField(max_length=255, description="相册名称")
     description = fields.TextField(description="相册描述", null=True)
     cover_image = fields.CharField(max_length=1024, description="封面图片URL", null=True)
+    filename = fields.CharField(max_length=255, description="文件名", null=True, editable=False)
     is_public = fields.BooleanField(default=True, description="是否公开")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
@@ -65,17 +66,16 @@ class Album(models.Model):
             try:
                 # 遍历关联照片尝试获取GPS信息
                 for photo in await self.photos.all():
-                    if photo.exif_data and 'GPSInfo' in photo.exif_data:
-                        gps = photo.exif_data['GPSInfo']
-                        if 'GPSLatitude' in gps and 'GPSLongitude' in gps:
-                            self.latitude = gps['GPSLatitude']
-                            self.longitude = gps['GPSLongitude']
-                            # 更新经纬度后需要再次保存
-                            await super().save(update_fields=["latitude", "longitude"])
-                            break
+                    # 从照片文件动态提取GPS信息
+                    if photo.latitude and photo.longitude:
+                        self.latitude = photo.latitude
+                        self.longitude = photo.longitude
+                        # 更新经纬度后需要再次保存
+                        await super().save(update_fields=["latitude", "longitude"])
+                        break
             except Exception as e:
                 # 捕获并记录异常，但不中断保存流程
-                print(f"从EXIF读取经纬度时出错: {e}")
+                print(f"从照片读取经纬度时出错: {e}")
 
 class Photo(models.Model):
     """照片模型"""
@@ -95,13 +95,12 @@ class Photo(models.Model):
     # 元数据
     taken_at = fields.DatetimeField(description="拍摄时间", null=True)
     location = fields.CharField(max_length=255, description="拍摄地点", null=True)
-    exif_data = fields.JSONField(description="EXIF数据", null=True, default={})
     
     # 状态字段
     is_active = fields.BooleanField(default=True, description="是否可用")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
-    sort_order = fields.IntField(default=0, description="排序顺序")
+    sort_order = fields.IntField(default=1, description="排序顺序",null=True)
     latitude = fields.FloatField(null=True, description="纬度")
     longitude = fields.FloatField(null=True, description="经度")
     
@@ -142,12 +141,5 @@ class Photo(models.Model):
         return data
         
     async def save(self, *args, **kwargs):
-        """重写save方法以从EXIF数据读取经纬度"""
-        if not self.latitude or not self.longitude:
-            if self.exif_data and 'GPSInfo' in self.exif_data:
-                gps = self.exif_data['GPSInfo']
-                if 'GPSLatitude' in gps and 'GPSLongitude' in gps:
-                    self.latitude = gps['GPSLatitude']
-                    self.longitude = gps['GPSLongitude']
-        
+        """保存照片模型"""
         await super().save(*args, **kwargs)
