@@ -99,7 +99,7 @@ class Photo(models.Model):
     is_active = fields.BooleanField(default=True, description="是否可用")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
-    sort_order = fields.IntField(default=0, description="排序顺序")
+    sort_order = fields.IntField(default=1, description="排序顺序",null=True)
     latitude = fields.FloatField(null=True, description="纬度")
     longitude = fields.FloatField(null=True, description="经度")
     
