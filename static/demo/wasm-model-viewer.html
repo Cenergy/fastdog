@@ -304,6 +304,33 @@
             </div>
           </div>
         </div>
+
+        <!-- 性能统计面板 -->
+        <div class="section">
+          <div class="section-title">⚡ 性能统计</div>
+          <div class="info-panel" id="performancePanel">
+            <div class="info-item">
+              <span class="info-label">总耗时:</span>
+              <span class="info-value" id="totalTime">-</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">网络请求:</span>
+              <span class="info-value" id="fetchTime">-</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">数据传输:</span>
+              <span class="info-value" id="transferTime">-</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">数据解码:</span>
+              <span class="info-value" id="decodeTime">-</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">几何转换:</span>
+              <span class="info-value" id="convertTime">-</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="main-content">
@@ -539,6 +566,11 @@
 
             // 更新信息
             this.updateModelInfo(result);
+            
+            // 更新性能统计
+            if (result.performanceStats) {
+              this.updatePerformanceStats(result.performanceStats);
+            }
           } catch (error) {
             console.error("加载模型失败:", error);
             this.updateProgress(0, `加载失败: ${error.message}`);
@@ -660,6 +692,26 @@
             this.updateInfo("格式", result.format);
           }
           this.updateInfo("状态", "加载成功");
+        }
+
+        updatePerformanceStats(stats) {
+          document.getElementById('totalTime').textContent = `${stats.totalTime}ms`;
+          document.getElementById('fetchTime').textContent = `${stats.fetchTime}ms`;
+          
+          // 根据不同模式显示不同的传输时间
+          const transferTimeElement = document.getElementById('transferTime');
+          if (stats.downloadTime) {
+            // Blob模式
+            transferTimeElement.textContent = `${stats.downloadTime}ms`;
+          } else if (stats.streamTime) {
+            // Stream模式
+            transferTimeElement.textContent = `${stats.streamTime}ms`;
+          } else {
+            transferTimeElement.textContent = '-';
+          }
+          
+          document.getElementById('decodeTime').textContent = `${stats.decodeTime}ms`;
+          document.getElementById('convertTime').textContent = `${stats.convertTime}ms`;
         }
 
         displayModelInfo(info) {

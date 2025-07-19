@@ -163,12 +163,15 @@ class WASMModelLoader {
      * 使用blob方式加载模型（推荐）
      */
     async loadModelBlob(filename, onProgress = null) {
+        const startTime = performance.now();
         try {
             console.log(`🚀 开始blob方式加载模型: ${filename}`);
             
+            const fetchStart = performance.now();
             const response = await fetch(`${this.baseUrl}/models/${filename}/blob`, {
                 headers: this.getHeaders()
             });
+            const fetchTime = performance.now() - fetchStart;
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -186,25 +189,43 @@ class WASMModelLoader {
             console.log(`   压缩比: ${compressionRatio}`);
             console.log(`   格式: ${format}`);
 
-            // 获取blob数据
-            const blob = await response.blob();
-            console.log(`✅ Blob下载完成: ${blob.size} bytes`);
-
-            // 转换为ArrayBuffer
-            const arrayBuffer = await blob.arrayBuffer();
+            // 直接获取ArrayBuffer数据（优化性能）
+            const downloadStart = performance.now();
+            const arrayBuffer = await response.arrayBuffer();
+            const downloadTime = performance.now() - downloadStart;
+            console.log(`✅ 数据下载完成: ${arrayBuffer.byteLength} bytes (耗时: ${downloadTime.toFixed(2)}ms)`);
             
             // 解码二进制数据
+            const decodeStart = performance.now();
             const decodedData = await this.decodeBinaryData(arrayBuffer);
+            const decodeTime = performance.now() - decodeStart;
             
             // 转换为Three.js几何体
+            const convertStart = performance.now();
             const geometry = await this.convertToThreeGeometry(decodedData);
+            const convertTime = performance.now() - convertStart;
+            
+            const totalTime = performance.now() - startTime;
+            console.log(`⚡ Blob模式性能统计:`);
+            console.log(`   网络请求: ${fetchTime.toFixed(2)}ms`);
+            console.log(`   数据下载: ${downloadTime.toFixed(2)}ms`);
+            console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
+            console.log(`   几何转换: ${convertTime.toFixed(2)}ms`);
+            console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
             
             return {
                 geometry,
                 originalSize: parseInt(originalSize),
                 compressedSize: parseInt(compressedSize),
                 compressionRatio: parseFloat(compressionRatio),
-                format
+                format,
+                performanceStats: {
+                    fetchTime: fetchTime.toFixed(2),
+                    downloadTime: downloadTime.toFixed(2),
+                    decodeTime: decodeTime.toFixed(2),
+                    convertTime: convertTime.toFixed(2),
+                    totalTime: totalTime.toFixed(2)
+                }
             };
             
         } catch (error) {
@@ -217,12 +238,15 @@ class WASMModelLoader {
      * 使用流式传输加载模型
      */
     async loadModelStream(filename, onProgress = null) {
+        const startTime = performance.now();
         try {
             console.log(`🌊 开始流式加载模型: ${filename}`);
             
+            const fetchStart = performance.now();
             const response = await fetch(`${this.baseUrl}/models/${filename}/binary`, {
                 headers: this.getHeaders()
             });
+            const fetchTime = performance.now() - fetchStart;
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -233,6 +257,7 @@ class WASMModelLoader {
             const chunks = [];
             let receivedLength = 0;
 
+            const streamStart = performance.now();
             while (true) {
                 const { done, value } = await reader.read();
                 
@@ -249,8 +274,10 @@ class WASMModelLoader {
                     });
                 }
             }
+            const streamTime = performance.now() - streamStart;
 
             // 合并所有chunks
+            const mergeStart = performance.now();
             const arrayBuffer = new ArrayBuffer(receivedLength);
             const uint8Array = new Uint8Array(arrayBuffer);
             let position = 0;
@@ -259,16 +286,41 @@ class WASMModelLoader {
                 uint8Array.set(chunk, position);
                 position += chunk.length;
             }
+            const mergeTime = performance.now() - mergeStart;
 
-            console.log(`✅ 流式下载完成: ${receivedLength} bytes`);
+            console.log(`✅ 流式下载完成: ${receivedLength} bytes (耗时: ${streamTime.toFixed(2)}ms)`);
             
             // 解码二进制数据
+            const decodeStart = performance.now();
             const decodedData = await this.decodeBinaryData(arrayBuffer);
+            const decodeTime = performance.now() - decodeStart;
             
             // 转换为Three.js几何体
+            const convertStart = performance.now();
             const geometry = await this.convertToThreeGeometry(decodedData);
+            const convertTime = performance.now() - convertStart;
             
-            return { geometry, size: receivedLength };
+            const totalTime = performance.now() - startTime;
+            console.log(`⚡ Stream模式性能统计:`);
+            console.log(`   网络请求: ${fetchTime.toFixed(2)}ms`);
+            console.log(`   流式下载: ${streamTime.toFixed(2)}ms`);
+            console.log(`   数据合并: ${mergeTime.toFixed(2)}ms`);
+            console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
+            console.log(`   几何转换: ${convertTime.toFixed(2)}ms`);
+            console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
+            
+            return { 
+                geometry, 
+                size: receivedLength,
+                performanceStats: {
+                    fetchTime: fetchTime.toFixed(2),
+                    streamTime: streamTime.toFixed(2),
+                    mergeTime: mergeTime.toFixed(2),
+                    decodeTime: decodeTime.toFixed(2),
+                    convertTime: convertTime.toFixed(2),
+                    totalTime: totalTime.toFixed(2)
+                }
+            };
             
         } catch (error) {
             console.error('流式加载模型失败:', error);

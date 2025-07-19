@@ -17,6 +17,8 @@ import json
 import struct
 import zlib
 import io
+import hashlib
+from functools import lru_cache
 from fastapi import Header, HTTPException
 from core.settings import settings
 
@@ -151,6 +153,35 @@ async def get_model_info(filename: str):
         raise HTTPException(status_code=500, detail=f"Failed to parse model file: {str(e)}")
 
 
+def get_cache_key(file_path: str) -> str:
+    """基于文件路径和修改时间生成缓存键"""
+    try:
+        stat = os.stat(file_path)
+        cache_data = f"{file_path}:{stat.st_mtime}:{stat.st_size}"
+        return hashlib.md5(cache_data.encode()).hexdigest()
+    except OSError:
+        # 如果文件不存在或无法访问，返回基于路径的哈希
+        return hashlib.md5(file_path.encode()).hexdigest()
+
+
+# 缓存统计
+cache_stats = {
+    "hits": 0,
+    "misses": 0,
+    "total_requests": 0
+}
+
+@lru_cache(maxsize=50)
+def cached_convert_gltf_to_binary(file_path: str, cache_key: str) -> bytes:
+    """带缓存的GLTF到二进制转换函数"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            gltf_data = json.load(f)
+        return convert_gltf_to_binary(gltf_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load or convert GLTF file: {str(e)}")
+
+
 def convert_gltf_to_binary(gltf_data: dict) -> bytes:
     """将GLTF数据转换为自定义二进制格式"""
     # 创建二进制数据结构
@@ -164,8 +195,8 @@ def convert_gltf_to_binary(gltf_data: dict) -> bytes:
     json_str = json.dumps(gltf_data, separators=(',', ':'))
     json_bytes = json_str.encode('utf-8')
     
-    # 压缩JSON数据
-    compressed_json = zlib.compress(json_bytes, level=9)
+    # 压缩JSON数据 (优化压缩级别以平衡速度和压缩比)
+    compressed_json = zlib.compress(json_bytes, level=6)
     
     # 写入压缩数据长度和数据
     binary_data.write(struct.pack('<I', len(compressed_json)))
@@ -185,13 +216,25 @@ async def stream_model_binary(filename: str, range: str = Header(None)):
         raise HTTPException(status_code=404, detail="Model file not found")
     
     try:
-        # 读取并转换GLTF文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            gltf_data = json.load(f)
+        # 生成缓存键
+        cache_key = get_cache_key(file_path)
         
-        # 转换为二进制格式
-        binary_data = convert_gltf_to_binary(gltf_data)
+        # 更新缓存统计
+        cache_stats["total_requests"] += 1
+        cache_info = cached_convert_gltf_to_binary.cache_info()
+        
+        # 使用缓存转换GLTF文件
+        binary_data = cached_convert_gltf_to_binary(file_path, cache_key)
         file_size = len(binary_data)
+        
+        # 检查是否为缓存命中
+        new_cache_info = cached_convert_gltf_to_binary.cache_info()
+        if new_cache_info.hits > cache_info.hits:
+            cache_stats["hits"] += 1
+            cache_status = "HIT"
+        else:
+            cache_stats["misses"] += 1
+            cache_status = "MISS"
         
         # 处理Range请求
         if range:
@@ -206,7 +249,8 @@ async def stream_model_binary(filename: str, range: str = Header(None)):
             data_stream.seek(start)
             remaining = end - start + 1
             while remaining > 0:
-                chunk_size = min(1024 * 1024, remaining)  # 1MB chunks
+                # 优化块大小以减少系统调用
+                chunk_size = min(4 * 1024 * 1024, remaining)  # 4MB chunks
                 chunk = data_stream.read(chunk_size)
                 if not chunk:
                     break
@@ -219,7 +263,12 @@ async def stream_model_binary(filename: str, range: str = Header(None)):
             "Content-Length": str(end - start + 1),
             "X-Original-Size": str(os.path.getsize(file_path)),
             "X-Compression-Ratio": f"{file_size / os.path.getsize(file_path):.2f}",
-            "X-Format": "fastdog-binary-v1"
+            "X-Format": "fastdog-binary-v1",
+            "X-Cache-Key": cache_key,
+            "X-Cache-Status": cache_status,
+            "X-Cache-Hit-Rate": f"{(cache_stats['hits'] / cache_stats['total_requests'] * 100):.1f}%" if cache_stats['total_requests'] > 0 else "0.0%",
+            "Cache-Control": "public, max-age=3600",  # 1小时缓存
+            "ETag": f'"{cache_key}"'
         }
         
         return StreamingResponse(
@@ -332,3 +381,37 @@ async def get_model_blob(filename: str, current_user: User = Depends(get_current
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to convert model to blob: {str(e)}")
+
+
+@router.get("/cache/stats")
+async def get_cache_stats():
+    """获取缓存统计信息"""
+    cache_info = cached_convert_gltf_to_binary.cache_info()
+    return {
+        "cache_info": {
+            "hits": cache_info.hits,
+            "misses": cache_info.misses,
+            "maxsize": cache_info.maxsize,
+            "currsize": cache_info.currsize
+        },
+        "custom_stats": cache_stats,
+        "hit_rate": f"{(cache_stats['hits'] / cache_stats['total_requests'] * 100):.2f}%" if cache_stats['total_requests'] > 0 else "0.00%",
+        "memory_efficiency": f"{(cache_info.currsize / cache_info.maxsize * 100):.1f}%" if cache_info.maxsize > 0 else "0.0%"
+    }
+
+
+@router.post("/cache/clear")
+async def clear_cache(current_user: User = Depends(get_current_active_user)):
+    """清理缓存（需要认证）"""
+    # 清理LRU缓存
+    cached_convert_gltf_to_binary.cache_clear()
+    
+    # 重置统计
+    cache_stats["hits"] = 0
+    cache_stats["misses"] = 0
+    cache_stats["total_requests"] = 0
+    
+    return {
+        "message": "Cache cleared successfully",
+        "cleared_by": current_user.username if hasattr(current_user, 'username') else "unknown"
+    }
