@@ -34,7 +34,7 @@ FastDog是一个基于FastAPI的现代化Web后端框架，提供了完整的用
 
 3. **服务层架构**
    - 将业务逻辑从路由处理器中分离出来
-   - 实现用户服务层，集中管理用户相关业务逻辑
+   - 实现用户服务层，集中管理用户相关业务的逻辑
    - 提高代码可维护性和可测试性
    - 新增任务调度服务，支持定时任务管理
 
@@ -92,28 +92,71 @@ uvicorn main:app --reload
 http://localhost:8000/docs
 ```
 
-## 项目结构
+## 🔧 配置说明
 
+### 环境变量配置
+项目使用`.env`文件进行配置，主要配置项包括：
+
+```bash
+# 基础配置
+PROJECT_NAME="Fast Go Go"
+SECRET_KEY="your-secret-key"
+ADMIN_SECRET_KEY="your-admin-secret-key"
+
+# 数据库配置
+DATABASE_URL="sqlite://./data/test.db"
+
+# 邮件配置
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_USERNAME="your-email@gmail.com"
+SMTP_PASSWORD="your-password"
+
+# AI服务配置
+DASHSCOPE_API_KEY="your-dashscope-key"
+HUGGINGFACE_API_KEY="your-huggingface-key"
+
+# 管理员配置
+DEFAULT_ADMIN_EMAIL="admin@example.com"
+DEFAULT_ADMIN_USERNAME="admin"
+DEFAULT_ADMIN_PASSWORD="admin123"
 ```
-fastdog/
-├── api/                  # API路由
-│   └── v1/               # API v1版本
-├── apps/                 # 应用模块
-│   └── users/            # 用户模块
-├── core/                 # 核心功能
-│   ├── middleware/       # 中间件
-│   ├── config.py         # 配置
-│   ├── database.py       # 数据库
-│   ├── security.py       # 安全
-│   └── cache.py          # 缓存
-├── migrations/           # 数据库迁移
-├── tests/                # 测试
-├── utils/                # 工具函数
-├── .env.example          # 环境变量示例
-├── main.py               # 应用入口
-├── requirements.txt      # 依赖
-└── README.md             # 说明文档
-```
+
+### 部署配置
+项目提供了完整的部署脚本和配置：
+
+- `deploy.sh` - 自动化部署脚本
+- `deploy/nginx.conf` - Nginx配置
+- `deploy/gunicorn_conf.py` - Gunicorn配置
+- `deploy/fastdog.conf` - Supervisor配置
+
+## 📚 API文档
+
+### 主要API端点
+
+- **认证相关**
+  - `POST /api/v1/auth/login` - 用户登录
+  - `POST /api/v1/auth/register` - 用户注册
+  - `POST /api/v1/auth/refresh` - 刷新令牌
+
+- **用户管理**
+  - `GET /api/v1/users/me` - 获取当前用户信息
+  - `PUT /api/v1/users/me` - 更新用户信息
+
+- **相册系统**
+  - `GET /api/v1/albums/` - 获取相册列表
+  - `POST /api/v1/albums/` - 创建相册
+  - `POST /api/v1/albums/{id}/photos` - 上传照片
+
+- **坐标转换**
+  - `POST /api/v1/converters/coordinate` - 坐标系转换
+
+- **创意生成**
+  - `POST /api/v1/ideas/generate` - AI创意生成
+
+- **系统监控**
+  - `GET /health` - 健康检查
+  - `GET /docs` - API文档
 
 ## 贡献
 
