@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>解码器调试页面</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+        }
+        .warning {
+            color: #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 WASM解码器调试工具</h1>
+        
+        <div>
+            <button onclick="testBlobDownload()">测试Blob下载</button>
+            <button onclick="testBinaryDownload()">测试Binary下载</button>
+            <button onclick="clearLog()">清空日志</button>
+        </div>
+        
+        <div id="log" class="log"></div>
+    </div>
+
+    <!-- 引入依赖库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="../js/model-loader.js"></script>
+    
+    <script>
+        let logElement = document.getElementById('log');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            logElement.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            logElement.innerHTML = '';
+        }
+        
+        // 重写console方法以捕获日志
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        const originalConsoleWarn = console.warn;
+        
+        console.log = function(...args) {
+            log(args.join(' '), 'info');
+            originalConsoleLog.apply(console, args);
+        };
+        
+        console.error = function(...args) {
+            log(args.join(' '), 'error');
+            originalConsoleError.apply(console, args);
+        };
+        
+        console.warn = function(...args) {
+            log(args.join(' '), 'warning');
+            originalConsoleWarn.apply(console, args);
+        };
+        
+        async function testBlobDownload() {
+            log('🎯 开始测试Blob下载...', 'info');
+            
+            try {
+                const response = await fetch('/api/v1/resources/models/merge.gltf/blob', {
+                    headers: {
+                        'Authorization': 'Bearer ' + await getAuthToken()
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                log(`✅ 下载成功，数据大小: ${arrayBuffer.byteLength} bytes`, 'success');
+                
+                // 手动解码
+                await manualDecode(arrayBuffer);
+                
+            } catch (error) {
+                log(`❌ Blob下载失败: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testBinaryDownload() {
+            log('🎯 开始测试Binary下载...', 'info');
+            
+            try {
+                const response = await fetch('/api/v1/resources/models/merge.gltf/binary', {
+                    headers: {
+                        'Authorization': 'Bearer ' + await getAuthToken()
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                log(`✅ 下载成功，数据大小: ${arrayBuffer.byteLength} bytes`, 'success');
+                
+                // 手动解码
+                await manualDecode(arrayBuffer);
+                
+            } catch (error) {
+                log(`❌ Binary下载失败: ${error.message}`, 'error');
+            }
+        }
+        
+        async function manualDecode(arrayBuffer) {
+            try {
+                const view = new DataView(arrayBuffer);
+                
+                // 验证魔数
+                const magic = new TextDecoder().decode(arrayBuffer.slice(0, 8));
+                log(`🔍 魔数: "${magic}"`);
+                
+                if (magic !== 'FASTDOG1') {
+                    throw new Error('无效的文件格式');
+                }
+                
+                // 读取头部信息
+                const version = view.getUint32(8, true);
+                const compressedLength = view.getUint32(12, true);
+                
+                log(`📋 版本: ${version}`);
+                log(`📋 压缩长度: ${compressedLength}`);
+                log(`📋 总数据长度: ${arrayBuffer.byteLength}`);
+                
+                // 提取压缩数据
+                const compressedData = arrayBuffer.slice(16, 16 + compressedLength);
+                log(`📋 压缩数据实际长度: ${compressedData.byteLength}`);
+                
+                // 读取原始数据长度
+                const originalLength = view.getUint32(16 + compressedLength, true);
+                log(`📋 原始长度: ${originalLength}`);
+                
+                // 检查数据完整性
+                const expectedTotalSize = 8 + 4 + 4 + compressedLength + 4;
+                log(`📋 期望总大小: ${expectedTotalSize}`);
+                
+                if (arrayBuffer.byteLength !== expectedTotalSize) {
+                    log(`⚠️ 数据大小不匹配！实际: ${arrayBuffer.byteLength}, 期望: ${expectedTotalSize}`, 'warning');
+                }
+                
+                // 尝试解压缩
+                const uint8Data = new Uint8Array(compressedData);
+                log(`🔧 开始解压缩 ${uint8Data.length} 字节的数据...`);
+                
+                // 显示压缩数据的前几个字节
+                const firstBytes = Array.from(uint8Data.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                log(`🔍 压缩数据前16字节: ${firstBytes}`);
+                
+                let decompressed;
+                try {
+                    decompressed = pako.inflate(uint8Data);
+                    log('✅ 标准zlib解压成功', 'success');
+                } catch (e1) {
+                    log(`❌ 标准zlib解压失败: ${e1.message}`, 'error');
+                    try {
+                        decompressed = pako.inflateRaw(uint8Data);
+                        log('✅ Raw deflate解压成功', 'success');
+                    } catch (e2) {
+                        log(`❌ Raw deflate解压失败: ${e2.message}`, 'error');
+                        try {
+                            decompressed = pako.ungzip(uint8Data);
+                            log('✅ Gzip解压成功', 'success');
+                        } catch (e3) {
+                            log(`❌ 所有解压缩方法都失败: ${e3.message}`, 'error');
+                            throw e3;
+                        }
+                    }
+                }
+                
+                const result = new TextDecoder().decode(decompressed);
+                log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`, 'success');
+                
+                // 尝试解析JSON
+                try {
+                    const jsonData = JSON.parse(result);
+                    log(`✅ JSON解析成功，包含 ${Object.keys(jsonData).length} 个顶级字段`, 'success');
+                } catch (jsonError) {
+                    log(`❌ JSON解析失败: ${jsonError.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ 手动解码失败: ${error.message}`, 'error');
+            }
+        }
+        
+        async function getAuthToken() {
+            try {
+                const response = await fetch('/api/v1/auth/login/access-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: 'username=admin@example.com&password=admin123'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`登录失败: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.access_token;
+            } catch (error) {
+                log(`❌ 获取认证令牌失败: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+        
+        // 页面加载完成后的初始化
+        window.addEventListener('load', () => {
+            log('🚀 解码器调试工具已加载', 'success');
+            log('📝 点击按钮开始测试...', 'info');
+        });
+    </script>
+</body>
+</html>

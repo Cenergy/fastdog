@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WASM模型查看器 - 支持Blob传输</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #333;
+        overflow: hidden;
+      }
+
+      .container {
+        display: flex;
+        height: 100vh;
+      }
+
+      .sidebar {
+        width: 300px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 20px;
+        overflow-y: auto;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .main-content {
+        flex: 1;
+        position: relative;
+      }
+
+      .title {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 20px;
+        color: #4a5568;
+        text-align: center;
+      }
+
+      .section {
+        margin-bottom: 25px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .section-title {
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #2d3748;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 5px;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        color: #4a5568;
+      }
+
+      select,
+      input,
+      button {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: all 0.3s ease;
+      }
+
+      select:focus,
+      input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 500;
+        margin-bottom: 10px;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      }
+
+      button:disabled {
+        background: #a0aec0;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .progress-container {
+        margin-top: 10px;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        width: 0%;
+        transition: width 0.3s ease;
+      }
+
+      .progress-text {
+        font-size: 12px;
+        color: #718096;
+        margin-top: 5px;
+      }
+
+      .info-panel {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px;
+        font-size: 12px;
+        color: #4a5568;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .info-item {
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .info-label {
+        font-weight: 500;
+      }
+
+      .info-value {
+        color: #667eea;
+      }
+
+      #viewer {
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle, #1a202c 0%, #2d3748 100%);
+      }
+
+      .loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 18px;
+        text-align: center;
+      }
+
+      .spinner {
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-top: 3px solid white;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 10px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .method-selector {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 10px;
+      }
+
+      .method-btn {
+        flex: 1;
+        padding: 8px;
+        font-size: 12px;
+        margin-bottom: 0;
+      }
+
+      .method-btn.active {
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 5px;
+      }
+
+      .status-success {
+        background: #48bb78;
+      }
+      .status-error {
+        background: #f56565;
+      }
+      .status-loading {
+        background: #ed8936;
+        animation: pulse 1s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="sidebar">
+        <div class="title">🚀 WASM模型查看器</div>
+
+        <!-- 模型选择 -->
+        <div class="section">
+          <div class="section-title">📁 模型选择</div>
+          <div class="form-group">
+            <label for="modelSelect">选择模型:</label>
+            <select id="modelSelect">
+              <option value="merge.gltf">merge.gltf</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 传输方式选择 -->
+        <div class="section">
+          <div class="section-title">🔄 传输方式</div>
+          <div class="method-selector">
+            <button class="method-btn active" data-method="blob">Blob</button>
+            <button class="method-btn" data-method="stream">Stream</button>
+            <button class="method-btn" data-method="gltf">GLTF</button>
+            <button class="method-btn" data-method="enhanced">Enhanced</button>
+          </div>
+          <div class="form-group">
+            <button id="loadBtn">🚀 加载模型</button>
+            <button id="infoBtn">📋 获取信息</button>
+          </div>
+        </div>
+
+        <!-- 渲染控制 -->
+        <div class="section">
+          <div class="section-title">🎮 渲染控制</div>
+          <button id="resetBtn">🔄 重置相机</button>
+          <button id="wireframeBtn">📐 线框模式</button>
+          <button id="toggleInfoBtn">📊 显示信息</button>
+        </div>
+
+        <!-- 进度显示 -->
+        <div class="section">
+          <div class="section-title">📈 加载进度</div>
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">等待加载...</div>
+          </div>
+        </div>
+
+        <!-- 信息面板 -->
+        <div class="section">
+          <div class="section-title">📊 模型信息</div>
+          <div class="info-panel" id="infoPanel">
+            <div class="info-item">
+              <span class="info-label">状态:</span>
+              <span class="info-value">等待加载</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div id="viewer"></div>
+        <div class="loading" id="loading" style="display: none">
+          <div class="spinner"></div>
+          <div>正在加载模型...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pako压缩库 (用于降级支持) -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/pako/2.1.0/pako.es5.min.js"></script>
+
+    <!-- 模型加载器 -->
+    <script src="/static/js/model-loader.js"></script>
+    <script type="module">
+      // 使用ES6模块导入Three.js (使用unpkg CDN，版本r120稳定)
+      import * as THREE from "https://unpkg.com/three@0.118.0/build/three.module.js";
+      import { OrbitControls } from "https://unpkg.com/three@0.118.0/examples/jsm/controls/OrbitControls.js";
+      import { GLTFLoader } from "https://unpkg.com/three@0.118.0/examples/jsm/loaders/GLTFLoader.js";
+
+      // 将THREE添加到全局作用域，以便其他脚本使用
+      window.THREE = THREE;
+      window.OrbitControls = OrbitControls;
+      window.GLTFLoader = GLTFLoader;
+      class ModelViewer {
+        constructor() {
+          this.scene = null;
+          this.camera = null;
+          this.renderer = null;
+          this.controls = null;
+          this.currentModel = null;
+          this.wireframeMode = false;
+          this.showInfo = false;
+          this.loadMethod = "blob";
+          this.authToken = null;
+
+          this.modelLoader = new WASMModelLoader(
+            "/api/v1/resources",
+            this.authToken
+          );
+
+          this.init();
+          this.setupEventListeners();
+        }
+
+        async init() {
+          // 创建场景
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0x1a202c);
+
+          // 创建相机
+          this.camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+          );
+          this.camera.position.set(5, 5, 5);
+
+          // 创建渲染器
+          this.renderer = new THREE.WebGLRenderer({ antialias: true });
+          this.renderer.setSize(window.innerWidth - 300, window.innerHeight);
+          this.renderer.shadowMap.enabled = true;
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+          document
+            .getElementById("viewer")
+            .appendChild(this.renderer.domElement);
+
+          // 创建控制器
+          this.controls = new OrbitControls(
+            this.camera,
+            this.renderer.domElement
+          );
+          this.controls.enableDamping = true;
+          this.controls.dampingFactor = 0.05;
+
+          // 添加光源
+          this.setupLighting();
+
+          // 开始渲染循环
+          this.animate();
+
+          // 尝试登录获取token
+          await this.login();
+        }
+
+        async login() {
+          try {
+            const response = await fetch("/api/v1/auth/login/access-token", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: "username=admin@example.com&password=admin123",
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              this.authToken = data.access_token;
+              this.modelLoader.authToken = this.authToken;
+              console.log("✅ 登录成功");
+              this.updateInfo("认证", "已登录");
+            } else {
+              console.warn("⚠️ 登录失败，将使用匿名访问");
+              this.updateInfo("认证", "匿名访问");
+            }
+          } catch (error) {
+            console.warn("⚠️ 登录异常:", error);
+            this.updateInfo("认证", "登录失败");
+          }
+        }
+
+        setupLighting() {
+          // 环境光
+          const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+          this.scene.add(ambientLight);
+
+          // 方向光
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+          directionalLight.position.set(10, 10, 5);
+          directionalLight.castShadow = true;
+          directionalLight.shadow.mapSize.width = 2048;
+          directionalLight.shadow.mapSize.height = 2048;
+          this.scene.add(directionalLight);
+
+          // 点光源
+          const pointLight = new THREE.PointLight(0x667eea, 0.5, 100);
+          pointLight.position.set(-10, 10, -10);
+          this.scene.add(pointLight);
+        }
+
+        setupEventListeners() {
+          // 传输方式选择
+          document.querySelectorAll(".method-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+              document
+                .querySelectorAll(".method-btn")
+                .forEach((b) => b.classList.remove("active"));
+              e.target.classList.add("active");
+              this.loadMethod = e.target.dataset.method;
+            });
+          });
+
+          // 按钮事件
+          document
+            .getElementById("loadBtn")
+            .addEventListener("click", () => this.loadModel());
+          document
+            .getElementById("infoBtn")
+            .addEventListener("click", () => this.getModelInfo());
+          document
+            .getElementById("resetBtn")
+            .addEventListener("click", () => this.resetCamera());
+          document
+            .getElementById("wireframeBtn")
+            .addEventListener("click", () => this.toggleWireframe());
+          document
+            .getElementById("toggleInfoBtn")
+            .addEventListener("click", () => this.toggleInfo());
+
+          // 窗口大小调整
+          window.addEventListener("resize", () => this.onWindowResize());
+        }
+
+        async loadModel() {
+          const filename = document.getElementById("modelSelect").value;
+          const loadBtn = document.getElementById("loadBtn");
+          const loading = document.getElementById("loading");
+
+          loadBtn.disabled = true;
+          loading.style.display = "block";
+
+          try {
+            this.updateProgress(0, "开始加载...");
+
+            let result;
+
+            switch (this.loadMethod) {
+              case "blob":
+                result = await this.modelLoader.loadModelBlob(
+                  filename,
+                  (progress) => {
+                    this.updateProgress(progress.percentage || 50, "下载中...");
+                  }
+                );
+                break;
+
+              case "stream":
+                result = await this.modelLoader.loadModelStream(
+                  filename,
+                  (progress) => {
+                    this.updateProgress(
+                      progress.percentage,
+                      `下载中... ${progress.loaded}/${progress.total}`
+                    );
+                  }
+                );
+                break;
+
+              case "gltf":
+                result = await this.loadOriginalGLTF(filename);
+                break;
+
+              case "enhanced":
+                result = await this.loadEnhancedGLTF(filename);
+                break;
+            }
+
+            this.updateProgress(100, "加载完成!");
+
+            // 移除旧模型
+            if (this.currentModel) {
+              this.scene.remove(this.currentModel);
+            }
+
+            // 添加新模型
+            const material = new THREE.MeshStandardMaterial({
+              color: 0x667eea,
+              metalness: 0.3,
+              roughness: 0.4,
+            });
+
+            this.currentModel = new THREE.Mesh(result.geometry, material);
+            this.currentModel.castShadow = true;
+            this.currentModel.receiveShadow = true;
+            this.scene.add(this.currentModel);
+
+            // 调整相机位置
+            this.fitCameraToModel();
+
+            // 更新信息
+            this.updateModelInfo(result);
+          } catch (error) {
+            console.error("加载模型失败:", error);
+            this.updateProgress(0, `加载失败: ${error.message}`);
+            this.updateInfo("错误", error.message);
+          } finally {
+            loadBtn.disabled = false;
+            loading.style.display = "none";
+          }
+        }
+
+        async loadOriginalGLTF(filename) {
+          return new Promise((resolve, reject) => {
+            const loader = new GLTFLoader();
+            loader.load(
+              `/static/models/${filename}`,
+              (gltf) => {
+                const geometry =
+                  gltf.scene.children[0]?.geometry || new THREE.BoxGeometry();
+                resolve({ geometry, format: "gltf" });
+              },
+              (progress) => {
+                const percentage = (progress.loaded / progress.total) * 100;
+                this.updateProgress(percentage, "下载GLTF...");
+              },
+              reject
+            );
+          });
+        }
+
+        async loadEnhancedGLTF(filename) {
+          try {
+            this.updateProgress(10, "开始增强加载...");
+            
+            // 使用自定义加载器加载并解码数据
+            const result = await this.modelLoader.loadModelBlob(
+              filename,
+              (progress) => {
+                this.updateProgress(progress.percentage * 0.8 || 40, "解码数据中...");
+              }
+            );
+            
+            this.updateProgress(90, "使用GLTFLoader处理...");
+            
+            return {
+              geometry: result.geometry,
+              format: "enhanced-gltf",
+              originalSize: result.originalSize,
+              compressedSize: result.compressedSize,
+              compressionRatio: result.compressionRatio
+            };
+            
+          } catch (error) {
+            console.error('增强GLTF加载失败:', error);
+            throw error;
+          }
+        }
+
+        async getModelInfo() {
+          const filename = document.getElementById("modelSelect").value;
+
+          try {
+            const info = await this.modelLoader.getModelInfo(filename);
+            this.displayModelInfo(info);
+          } catch (error) {
+            console.error("获取模型信息失败:", error);
+            this.updateInfo("错误", error.message);
+          }
+        }
+
+        updateProgress(percentage, text) {
+          const progressFill = document.getElementById("progressFill");
+          const progressText = document.getElementById("progressText");
+
+          progressFill.style.width = `${percentage}%`;
+          progressText.textContent = text;
+        }
+
+        updateInfo(label, value) {
+          const infoPanel = document.getElementById("infoPanel");
+          const existingItem = Array.from(infoPanel.children).find(
+            (item) =>
+              item.querySelector(".info-label").textContent === label + ":"
+          );
+
+          if (existingItem) {
+            existingItem.querySelector(".info-value").textContent = value;
+          } else {
+            const infoItem = document.createElement("div");
+            infoItem.className = "info-item";
+            infoItem.innerHTML = `
+                        <span class="info-label">${label}:</span>
+                        <span class="info-value">${value}</span>
+                    `;
+            infoPanel.appendChild(infoItem);
+          }
+        }
+
+        updateModelInfo(result) {
+          this.updateInfo("传输方式", this.loadMethod.toUpperCase());
+          if (result.originalSize) {
+            this.updateInfo(
+              "原始大小",
+              `${(result.originalSize / 1024 / 1024).toFixed(2)} MB`
+            );
+          }
+          if (result.compressedSize) {
+            this.updateInfo(
+              "压缩大小",
+              `${(result.compressedSize / 1024 / 1024).toFixed(2)} MB`
+            );
+          }
+          if (result.compressionRatio) {
+            this.updateInfo(
+              "压缩比",
+              `${(result.compressionRatio * 100).toFixed(1)}%`
+            );
+          }
+          if (result.format) {
+            this.updateInfo("格式", result.format);
+          }
+          this.updateInfo("状态", "加载成功");
+        }
+
+        displayModelInfo(info) {
+          this.updateInfo("文件名", info.name);
+          this.updateInfo("大小", `${(info.size / 1024 / 1024).toFixed(2)} MB`);
+          this.updateInfo("网格数", info.meshes);
+          this.updateInfo("材质数", info.materials);
+          this.updateInfo("压缩支持", info.compression_available ? "是" : "否");
+          if (info.estimated_compressed_size) {
+            this.updateInfo(
+              "预估压缩大小",
+              `${(info.estimated_compressed_size / 1024 / 1024).toFixed(2)} MB`
+            );
+          }
+        }
+
+        resetCamera() {
+          this.camera.position.set(5, 5, 5);
+          this.controls.reset();
+        }
+
+        toggleWireframe() {
+          this.wireframeMode = !this.wireframeMode;
+          if (this.currentModel) {
+            this.currentModel.material.wireframe = this.wireframeMode;
+          }
+          document.getElementById("wireframeBtn").textContent = this
+            .wireframeMode
+            ? "🔲 实体模式"
+            : "📐 线框模式";
+        }
+
+        toggleInfo() {
+          this.showInfo = !this.showInfo;
+          const infoPanel = document.getElementById("infoPanel");
+          infoPanel.style.display = this.showInfo ? "block" : "none";
+          document.getElementById("toggleInfoBtn").textContent = this.showInfo
+            ? "📊 隐藏信息"
+            : "📊 显示信息";
+        }
+
+        fitCameraToModel() {
+          if (!this.currentModel) return;
+
+          const box = new THREE.Box3().setFromObject(this.currentModel);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const fov = this.camera.fov * (Math.PI / 180);
+          const cameraDistance = Math.abs(maxDim / Math.sin(fov / 2)) * 1.5;
+
+          this.camera.position.copy(center);
+          this.camera.position.z += cameraDistance;
+          this.camera.lookAt(center);
+          this.controls.target.copy(center);
+          this.controls.update();
+        }
+
+        onWindowResize() {
+          this.camera.aspect = (window.innerWidth - 300) / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth - 300, window.innerHeight);
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+          this.controls.update();
+          this.renderer.render(this.scene, this.camera);
+        }
+      }
+
+      // 启动应用
+      window.addEventListener("DOMContentLoaded", () => {
+        new ModelViewer();
+      });
+    </script>
+  </body>
+</html>
