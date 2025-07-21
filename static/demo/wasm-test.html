@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastDog WASM 解码器测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4a5568;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .success {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            color: #22543d;
+        }
+        
+        .error {
+            background: #fed7d7;
+            border: 1px solid #fc8181;
+            color: #742a2a;
+        }
+        
+        .info {
+            background: #ebf8ff;
+            border: 1px solid #90cdf4;
+            color: #2a4365;
+        }
+        
+        .capabilities {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .capability {
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .supported {
+            background: #f0fff4;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+        
+        .not-supported {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+        
+        .file-input {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            width: 100%;
+        }
+        
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FastDog WASM 解码器测试</h1>
+        
+        <!-- 系统能力检测 -->
+        <div class="test-section">
+            <div class="test-title">🔍 系统能力检测</div>
+            <button onclick="checkCapabilities()">检测 WASM 支持</button>
+            <div id="capabilities-result"></div>
+        </div>
+        
+        <!-- WASM 模块初始化 -->
+        <div class="test-section">
+            <div class="test-title">⚡ WASM 模块初始化</div>
+            <button onclick="initWASM()">初始化 WASM 解码器</button>
+            <div id="init-result"></div>
+        </div>
+        
+        <!-- 文件上传测试 -->
+        <div class="test-section">
+            <div class="test-title">📁 文件上传测试</div>
+            <input type="file" id="file-input" class="file-input" accept=".bin,.fastdog" />
+            <button onclick="testFileUpload()">测试文件解码</button>
+            <div class="progress" id="file-progress" style="display: none;">
+                <div class="progress-bar" id="file-progress-bar"></div>
+            </div>
+            <div id="file-result"></div>
+        </div>
+        
+        <!-- API 测试 -->
+        <div class="test-section">
+            <div class="test-title">🌐 API 测试</div>
+            <select id="model-select" class="file-input">
+                <option value="cube.gltf">cube.gltf</option>
+                <option value="sphere.gltf">sphere.gltf</option>
+                <option value="teapot.gltf">teapot.gltf</option>
+            </select>
+            <button onclick="testAPIDecoding()">测试 API 解码</button>
+            <div class="progress" id="api-progress" style="display: none;">
+                <div class="progress-bar" id="api-progress-bar"></div>
+            </div>
+            <div id="api-result"></div>
+        </div>
+        
+        <!-- 性能基准测试 -->
+        <div class="test-section">
+            <div class="test-title">🏃 性能基准测试</div>
+            <button onclick="runBenchmark()">运行基准测试</button>
+            <div class="progress" id="benchmark-progress" style="display: none;">
+                <div class="progress-bar" id="benchmark-progress-bar"></div>
+            </div>
+            <div id="benchmark-result"></div>
+        </div>
+    </div>
+    
+    <script src="/static/js/wasm-decoder.js"></script>
+    <script>
+        let wasmDecoder = null;
+        
+        // 检测系统能力
+        function checkCapabilities() {
+            const resultDiv = document.getElementById('capabilities-result');
+            const capabilities = FastDogWASMDecoder.getCapabilities();
+            
+            let html = '<div class="capabilities">';
+            
+            for (const [key, value] of Object.entries(capabilities)) {
+                const className = value ? 'supported' : 'not-supported';
+                const icon = value ? '✅' : '❌';
+                const text = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                html += `<div class="capability ${className}">${icon} ${text}</div>`;
+            }
+            
+            html += '</div>';
+            resultDiv.innerHTML = html;
+        }
+        
+        // 初始化 WASM
+        async function initWASM() {
+            const resultDiv = document.getElementById('init-result');
+            
+            try {
+                resultDiv.innerHTML = '<div class="info">正在初始化 WASM 解码器...</div>';
+                
+                wasmDecoder = new FastDogWASMDecoder();
+                await wasmDecoder.init();
+                
+                resultDiv.innerHTML = '<div class="success">✅ WASM 解码器初始化成功！</div>';
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 初始化失败: ${error.message}</div>`;
+            }
+        }
+        
+        // 测试文件上传
+        async function testFileUpload() {
+            const fileInput = document.getElementById('file-input');
+            const resultDiv = document.getElementById('file-result');
+            const progressDiv = document.getElementById('file-progress');
+            const progressBar = document.getElementById('file-progress-bar');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="error">请先选择一个文件</div>';
+                return;
+            }
+            
+            if (!wasmDecoder) {
+                resultDiv.innerHTML = '<div class="error">请先初始化 WASM 解码器</div>';
+                return;
+            }
+            
+            try {
+                progressDiv.style.display = 'block';
+                progressBar.style.width = '20%';
+                
+                const file = fileInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+                
+                progressBar.style.width = '50%';
+                
+                // 验证格式
+                const isValid = await wasmDecoder.validate(arrayBuffer);
+                
+                progressBar.style.width = '70%';
+                
+                if (!isValid) {
+                    throw new Error('文件格式不是有效的 FastDog 二进制格式');
+                }
+                
+                // 解码
+                const result = await wasmDecoder.decode(arrayBuffer);
+                
+                progressBar.style.width = '100%';
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ 文件解码成功！\n
+                        文件信息：
+                        - 文件名: ${file.name}
+                        - 文件大小: ${(file.size / 1024).toFixed(2)} KB
+                        - 原始大小: ${(result.stats.originalSize / 1024).toFixed(2)} KB
+                        - 压缩比: ${(result.stats.compressionRatio * 100).toFixed(1)}%
+                        - 解码时间: ${result.stats.decodeTimeMs.toFixed(2)} ms
+                        - 格式版本: ${result.stats.formatVersion}
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 解码失败: ${error.message}</div>`;
+            } finally {
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                    progressBar.style.width = '0%';
+                }, 1000);
+            }
+        }
+        
+        // 测试 API 解码
+        async function testAPIDecoding() {
+            const modelSelect = document.getElementById('model-select');
+            const resultDiv = document.getElementById('api-result');
+            const progressDiv = document.getElementById('api-progress');
+            const progressBar = document.getElementById('api-progress-bar');
+            
+            if (!wasmDecoder) {
+                resultDiv.innerHTML = '<div class="error">请先初始化 WASM 解码器</div>';
+                return;
+            }
+            
+            try {
+                progressDiv.style.display = 'block';
+                progressBar.style.width = '10%';
+                
+                const filename = modelSelect.value;
+                
+                // 下载二进制数据
+                const response = await fetch(`/api/v1/resources/models/${filename}/binary`);
+                
+                progressBar.style.width = '40%';
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const binaryData = await response.arrayBuffer();
+                
+                progressBar.style.width = '70%';
+                
+                // 解码
+                const result = await wasmDecoder.decode(binaryData);
+                
+                progressBar.style.width = '100%';
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ API 解码成功！\n
+                        模型信息：
+                        - 模型文件: ${filename}
+                        - 原始大小: ${(result.stats.originalSize / 1024).toFixed(2)} KB
+                        - 压缩大小: ${(result.stats.compressedSize / 1024).toFixed(2)} KB
+                        - 压缩比: ${(result.stats.compressionRatio * 100).toFixed(1)}%
+                        - 解码时间: ${result.stats.decodeTimeMs.toFixed(2)} ms
+                        - WASM 解码时间: ${result.stats.wasmDecodeTime.toFixed(2)} ms
+                        - 格式版本: ${result.stats.formatVersion}
+                        
+                        GLTF 数据预览：
+                        ${JSON.stringify(result.data, null, 2).substring(0, 500)}...
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ API 测试失败: ${error.message}</div>`;
+            } finally {
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                    progressBar.style.width = '0%';
+                }, 1000);
+            }
+        }
+        
+        // 运行基准测试
+        async function runBenchmark() {
+            const resultDiv = document.getElementById('benchmark-result');
+            const progressDiv = document.getElementById('benchmark-progress');
+            const progressBar = document.getElementById('benchmark-progress-bar');
+            
+            if (!wasmDecoder) {
+                resultDiv.innerHTML = '<div class="error">请先初始化 WASM 解码器</div>';
+                return;
+            }
+            
+            try {
+                progressDiv.style.display = 'block';
+                progressBar.style.width = '10%';
+                
+                // 获取测试数据
+                const response = await fetch('/api/v1/resources/models/cube.gltf/binary');
+                if (!response.ok) {
+                    throw new Error('无法获取测试数据');
+                }
+                
+                progressBar.style.width = '30%';
+                
+                const testData = await response.arrayBuffer();
+                
+                progressBar.style.width = '50%';
+                
+                // 运行基准测试
+                const benchmarkResult = await wasmDecoder.benchmark(testData, 50);
+                
+                progressBar.style.width = '100%';
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        🏃 基准测试完成！\n
+                        测试结果：
+                        - 迭代次数: ${benchmarkResult.iterations}
+                        - 平均时间: ${benchmarkResult.avg_time_ms.toFixed(2)} ms
+                        - 最小时间: ${benchmarkResult.min_time_ms.toFixed(2)} ms
+                        - 最大时间: ${benchmarkResult.max_time_ms.toFixed(2)} ms
+                        - 成功率: ${(benchmarkResult.success_rate * 100).toFixed(1)}%
+                        - 吞吐量: ${((testData.byteLength / 1024) / (benchmarkResult.avg_time_ms / 1000)).toFixed(1)} KB/s
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 基准测试失败: ${error.message}</div>`;
+            } finally {
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                    progressBar.style.width = '0%';
+                }, 1000);
+            }
+        }
+        
+        // 页面加载时自动检测能力
+        window.addEventListener('DOMContentLoaded', () => {
+            checkCapabilities();
+        });
+    </script>
+</body>
+</html>

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WASM模型查看器 - 支持Blob传输</title>
+    <title>WASM模型查看器 - 支持WASM解码</title>
     <style>
       * {
         margin: 0;
@@ -192,7 +192,7 @@
         0% {
           transform: rotate(0deg);
         }
-        100% {
+          100% {
           transform: rotate(360deg);
         }
       }
@@ -264,10 +264,11 @@
         <div class="section">
           <div class="section-title">🔄 传输方式</div>
           <div class="method-selector">
-            <button class="method-btn active" data-method="blob">Blob</button>
+            <button class="method-btn" data-method="blob">Blob</button>
             <button class="method-btn" data-method="stream">Stream</button>
             <button class="method-btn" data-method="gltf">GLTF</button>
             <button class="method-btn" data-method="enhanced">Enhanced</button>
+            <button class="method-btn active" data-method="wasm">🚀 WASM解码</button>
           </div>
           <div class="form-group">
             <button id="loadBtn">🚀 加载模型</button>
@@ -347,6 +348,7 @@
 
     <!-- 模型加载器 -->
     <script src="/static/js/model-loader.js"></script>
+    <script src="/static/js/wasm-decoder.js"></script>
     <script type="module">
       // 使用ES6模块导入Three.js (使用unpkg CDN，版本r120稳定)
       import * as THREE from "https://unpkg.com/three@0.118.0/build/three.module.js";
@@ -366,8 +368,9 @@
           this.currentModel = null;
           this.wireframeMode = false;
           this.showInfo = false;
-          this.loadMethod = "blob";
+          this.loadMethod = "wasm";
           this.authToken = null;
+          this.wasmDecoder = null;
 
           this.modelLoader = new WASMModelLoader(
             "/api/v1/resources",
@@ -416,8 +419,33 @@
           // 开始渲染循环
           this.animate();
 
+          // 初始化 WASM 解码器
+          await this.initWASMDecoder();
+
           // 尝试登录获取token
           await this.login();
+        }
+
+        async initWASMDecoder() {
+          try {
+            console.log('🚀 初始化 WASM 解码器...');
+            // 确保从window对象获取FastDogWASMDecoder
+            const FastDogWASMDecoder = window.FastDogWASMDecoder;
+            if (!FastDogWASMDecoder) {
+              throw new Error('FastDogWASMDecoder 未定义，请检查 wasm-decoder.js 是否正确加载');
+            }
+            this.wasmDecoder = new FastDogWASMDecoder();
+            await this.wasmDecoder.init();
+            console.log('✅ WASM 解码器初始化成功');
+            this.updateInfo('WASM', '已初始化');
+          } catch (error) {
+            console.error('❌ WASM 解码器初始化失败:', error);
+            this.updateInfo('WASM', '初始化失败');
+            // 如果 WASM 不可用，回退到 Stream 模式
+            this.loadMethod = 'stream';
+            document.querySelector('[data-method="stream"]').classList.add('active');
+            document.querySelector('[data-method="wasm"]').classList.remove('active');
+          }
         }
 
         async login() {
@@ -540,6 +568,10 @@
               case "enhanced":
                 result = await this.loadEnhancedGLTF(filename);
                 break;
+
+              case "wasm":
+                result = await this.loadModelWASM(filename);
+                break;
             }
 
             this.updateProgress(100, "加载完成!");
@@ -578,6 +610,390 @@
           } finally {
             loadBtn.disabled = false;
             loading.style.display = "none";
+          }
+        }
+
+        async loadModelWASM(filename) {
+          if (!this.wasmDecoder) {
+            throw new Error('WASM 解码器未初始化');
+          }
+
+          const startTime = performance.now();
+          this.updateProgress(10, 'WASM: 开始下载二进制数据...');
+
+          try {
+            // 下载二进制数据
+            const headers = {};
+            if (this.authToken) {
+              headers['Authorization'] = `Bearer ${this.authToken}`;
+            }
+
+            const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
+              headers
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            this.updateProgress(30, 'WASM: 下载完成，开始解码...');
+
+            // 获取二进制数据
+            const binaryData = await response.arrayBuffer();
+            const downloadTime = performance.now() - startTime;
+
+            this.updateProgress(50, 'WASM: 使用 WASM 解码中...');
+
+            // 使用 WASM 解码
+            const decodeStartTime = performance.now();
+            console.log('🔍 当前解码器类型:', this.wasmDecoder.getDecoderType());
+            const decodeResult = await this.wasmDecoder.decode(binaryData);
+            const decodeTime = performance.now() - decodeStartTime;
+            
+            console.log('📊 解码结果:', decodeResult);
+            console.log('📊 解码结果stats:', decodeResult.stats);
+            console.log('📊 解码数据类型:', typeof decodeResult.data);
+            console.log('📊 解码数据内容:', decodeResult.data);
+            
+            // 如果数据是字符串，尝试解析为JSON
+            let parsedData = decodeResult.data;
+            if (typeof decodeResult.data === 'string') {
+              try {
+                parsedData = JSON.parse(decodeResult.data);
+                console.log('📊 解析后的JSON数据:', parsedData);
+              } catch (e) {
+                console.warn('⚠️ 无法解析为JSON:', e);
+              }
+            }
+
+            this.updateProgress(80, 'WASM: 解码完成，构建几何体...');
+
+            // 从解码结果构建几何体
+            const geometry = this.buildGeometryFromGLTF(parsedData || decodeResult.data);
+            const totalTime = performance.now() - startTime;
+
+            this.updateProgress(100, 'WASM: 加载完成!');
+
+            // 检查stats是否存在，提供默认值
+            const stats = decodeResult.stats || {
+              originalSize: binaryData.byteLength,
+              compressedSize: binaryData.byteLength,
+              compressionRatio: 1.0,
+              wasmDecodeTime: decodeTime
+            };
+
+            // 返回结果和性能统计
+            return {
+              geometry,
+              format: 'wasm',
+              performanceStats: {
+                downloadTime: downloadTime.toFixed(2),
+                decodeTime: decodeTime.toFixed(2),
+                totalTime: totalTime.toFixed(2),
+                originalSize: stats.originalSize,
+                compressedSize: stats.compressedSize,
+                compressionRatio: (stats.compressionRatio * 100).toFixed(1),
+                wasmDecodeTime: (stats.wasmDecodeTime || decodeTime).toFixed(2)
+              },
+              wasmStats: stats
+            };
+
+          } catch (error) {
+            console.error('WASM 模型加载失败:', error);
+            throw error;
+          }
+        }
+
+        buildGeometryFromGLTF(gltfData) {
+          // 详细调试GLTF数据结构
+          console.log('🔍 GLTF数据结构分析:');
+          console.log('📋 完整GLTF数据:', gltfData);
+          console.log('📋 GLTF数据类型:', typeof gltfData);
+          console.log('📋 GLTF数据键:', Object.keys(gltfData || {}));
+          
+          try {
+            // 处理不同的数据格式
+            let actualGltfData = gltfData;
+            
+            // 如果数据是数组，取第一个元素
+            if (Array.isArray(gltfData) && gltfData.length > 0) {
+              console.log('📋 数据是数组，取第一个元素');
+              actualGltfData = gltfData[0];
+            }
+            
+            // 如果数据有scene或scenes属性，可能是完整的GLTF
+            if (actualGltfData && (actualGltfData.scene !== undefined || actualGltfData.scenes)) {
+              console.log('✅ 检测到完整GLTF格式');
+            }
+            
+            // 如果数据直接包含几何信息（如vertices, indices等）
+            if (actualGltfData && (actualGltfData.vertices || actualGltfData.positions)) {
+              console.log('✅ 检测到直接几何数据格式');
+              return this.buildGeometryFromDirectData(actualGltfData);
+            }
+            
+            console.log('📋 处理后的数据:', actualGltfData);
+            console.log('📋 处理后的数据键:', Object.keys(actualGltfData || {}));
+            
+            // 检查是否有meshes属性
+            if (actualGltfData && actualGltfData.meshes) {
+              console.log('✅ 找到meshes属性:', actualGltfData.meshes);
+              console.log('📊 meshes数量:', actualGltfData.meshes.length);
+              
+              if (actualGltfData.meshes.length > 0) {
+                const mesh = actualGltfData.meshes[0];
+                console.log('🔍 第一个mesh:', mesh);
+                console.log('📋 mesh键:', Object.keys(mesh || {}));
+                
+                if (mesh.primitives && mesh.primitives.length > 0) {
+                  const primitive = mesh.primitives[0];
+                  console.log('🔍 第一个primitive:', primitive);
+                  console.log('📋 primitive键:', Object.keys(primitive || {}));
+                  
+                  // 检查是否有顶点数据
+                  if (primitive.attributes) {
+                    console.log('✅ 找到attributes:', primitive.attributes);
+                    
+                    // 尝试从GLTF数据构建真实几何体
+                    if (actualGltfData.accessors && actualGltfData.bufferViews && actualGltfData.buffers) {
+                      console.log('✅ 找到完整的GLTF结构，尝试构建真实几何体');
+                      return this.buildRealGeometry(actualGltfData, primitive);
+                    }
+                  }
+                  
+                  // 创建基本几何体作为示例
+                  console.log('⚠️ 使用示例几何体 (2x2x2)');
+                  const geometry = new THREE.BoxGeometry(2, 2, 2);
+                  return geometry;
+                }
+              }
+            } else {
+              console.log('❌ 未找到meshes属性');
+            }
+            
+            // 如果没有网格数据，返回默认几何体
+            console.log('⚠️ 使用默认几何体 (1x1x1)');
+            return new THREE.BoxGeometry(1, 1, 1);
+          } catch (error) {
+            console.warn('❌ 构建几何体时出错，使用默认几何体:', error);
+            return new THREE.BoxGeometry(1, 1, 1);
+          }
+        }
+
+        buildGeometryFromDirectData(data) {
+          console.log('🔧 构建直接几何数据');
+          console.log('📋 直接数据内容:', data);
+          
+          try {
+            const geometry = new THREE.BufferGeometry();
+            
+            // 处理顶点位置数据
+            if (data.vertices || data.positions) {
+              const positions = data.vertices || data.positions;
+              console.log('📍 找到顶点数据:', positions);
+              
+              if (Array.isArray(positions)) {
+                const positionArray = new Float32Array(positions);
+                geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+                console.log('✅ 已设置顶点位置，顶点数:', positions.length / 3);
+              }
+            }
+            
+            // 处理法向量数据
+            if (data.normals) {
+              const normals = data.normals;
+              console.log('📐 找到法向量数据:', normals);
+              
+              if (Array.isArray(normals)) {
+                const normalArray = new Float32Array(normals);
+                geometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3));
+                console.log('✅ 已设置法向量');
+              }
+            }
+            
+            // 处理索引数据
+            if (data.indices || data.faces) {
+              const indices = data.indices || data.faces;
+              console.log('🔢 找到索引数据:', indices);
+              
+              if (Array.isArray(indices)) {
+                const indexArray = new Uint32Array(indices);
+                geometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
+                console.log('✅ 已设置索引，面数:', indices.length / 3);
+              }
+            }
+            
+            // 处理纹理坐标
+            if (data.uvs || data.texCoords) {
+              const uvs = data.uvs || data.texCoords;
+              console.log('🎨 找到纹理坐标:', uvs);
+              
+              if (Array.isArray(uvs)) {
+                const uvArray = new Float32Array(uvs);
+                geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+                console.log('✅ 已设置纹理坐标');
+              }
+            }
+            
+            // 计算边界盒和法向量
+            geometry.computeBoundingBox();
+            if (!geometry.attributes.normal) {
+              geometry.computeVertexNormals();
+              console.log('📐 已计算顶点法向量');
+            }
+            
+            console.log('✅ 直接几何体构建完成');
+            console.log('📊 几何体信息:', {
+              vertices: geometry.attributes.position ? geometry.attributes.position.count : 0,
+              faces: geometry.index ? geometry.index.count / 3 : 0,
+              hasNormals: !!geometry.attributes.normal,
+              hasUVs: !!geometry.attributes.uv
+            });
+            
+            return geometry;
+            
+          } catch (error) {
+            console.error('❌ 构建直接几何体失败:', error);
+            console.log('⚠️ 回退到示例几何体');
+            return new THREE.BoxGeometry(2, 2, 2);
+          }
+        }
+
+        buildRealGeometry(gltfData, primitive) {
+          console.log('🔧 开始构建真实几何体');
+          
+          try {
+            const geometry = new THREE.BufferGeometry();
+            
+            // 获取顶点位置数据
+            if (primitive.attributes.POSITION !== undefined) {
+              const positionAccessor = gltfData.accessors[primitive.attributes.POSITION];
+              const positionBufferView = gltfData.bufferViews[positionAccessor.bufferView];
+              const positionBuffer = gltfData.buffers[positionBufferView.buffer];
+              
+              console.log('📍 位置访问器:', positionAccessor);
+              console.log('📍 位置缓冲视图:', positionBufferView);
+              
+              // 解码base64数据
+              let bufferData;
+              if (positionBuffer.uri && positionBuffer.uri.startsWith('data:')) {
+                const base64Data = positionBuffer.uri.split(',')[1];
+                const binaryString = atob(base64Data);
+                bufferData = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bufferData[i] = binaryString.charCodeAt(i);
+                }
+              } else {
+                console.warn('⚠️ 不支持的缓冲区URI格式');
+                return new THREE.BoxGeometry(2, 2, 2);
+              }
+              
+              // 提取顶点位置
+              const byteOffset = (positionBufferView.byteOffset || 0) + (positionAccessor.byteOffset || 0);
+              const positions = new Float32Array(
+                bufferData.buffer,
+                byteOffset,
+                positionAccessor.count * 3
+              );
+              
+              console.log('📍 顶点数量:', positionAccessor.count);
+              console.log('📍 位置数据前10个值:', Array.from(positions.slice(0, 10)));
+              
+              geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            }
+            
+            // 获取法向量数据
+            if (primitive.attributes.NORMAL !== undefined) {
+              const normalAccessor = gltfData.accessors[primitive.attributes.NORMAL];
+              const normalBufferView = gltfData.bufferViews[normalAccessor.bufferView];
+              const normalBuffer = gltfData.buffers[normalBufferView.buffer];
+              
+              // 解码base64数据
+              let bufferData;
+              if (normalBuffer.uri && normalBuffer.uri.startsWith('data:')) {
+                const base64Data = normalBuffer.uri.split(',')[1];
+                const binaryString = atob(base64Data);
+                bufferData = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bufferData[i] = binaryString.charCodeAt(i);
+                }
+              }
+              
+              if (bufferData) {
+                const byteOffset = (normalBufferView.byteOffset || 0) + (normalAccessor.byteOffset || 0);
+                const normals = new Float32Array(
+                  bufferData.buffer,
+                  byteOffset,
+                  normalAccessor.count * 3
+                );
+                
+                geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+                console.log('📐 已添加法向量数据');
+              }
+            }
+            
+            // 获取索引数据
+            if (primitive.indices !== undefined) {
+              const indexAccessor = gltfData.accessors[primitive.indices];
+              const indexBufferView = gltfData.bufferViews[indexAccessor.bufferView];
+              const indexBuffer = gltfData.buffers[indexBufferView.buffer];
+              
+              // 解码base64数据
+              let bufferData;
+              if (indexBuffer.uri && indexBuffer.uri.startsWith('data:')) {
+                const base64Data = indexBuffer.uri.split(',')[1];
+                const binaryString = atob(base64Data);
+                bufferData = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bufferData[i] = binaryString.charCodeAt(i);
+                }
+              }
+              
+              if (bufferData) {
+                const byteOffset = (indexBufferView.byteOffset || 0) + (indexAccessor.byteOffset || 0);
+                
+                let indices;
+                if (indexAccessor.componentType === 5123) { // UNSIGNED_SHORT
+                  indices = new Uint16Array(
+                    bufferData.buffer,
+                    byteOffset,
+                    indexAccessor.count
+                  );
+                } else if (indexAccessor.componentType === 5125) { // UNSIGNED_INT
+                  indices = new Uint32Array(
+                    bufferData.buffer,
+                    byteOffset,
+                    indexAccessor.count
+                  );
+                }
+                
+                if (indices) {
+                  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+                  console.log('🔢 已添加索引数据，索引数量:', indexAccessor.count);
+                }
+              }
+            }
+            
+            // 计算边界盒和法向量
+            geometry.computeBoundingBox();
+            if (!geometry.attributes.normal) {
+              geometry.computeVertexNormals();
+              console.log('📐 已计算顶点法向量');
+            }
+            
+            console.log('✅ 真实几何体构建完成');
+            console.log('📊 几何体信息:', {
+              vertices: geometry.attributes.position ? geometry.attributes.position.count : 0,
+              faces: geometry.index ? geometry.index.count / 3 : 0,
+              hasNormals: !!geometry.attributes.normal
+            });
+            
+            return geometry;
+            
+          } catch (error) {
+            console.error('❌ 构建真实几何体失败:', error);
+            console.log('⚠️ 回退到示例几何体');
+            return new THREE.BoxGeometry(2, 2, 2);
           }
         }
 
@@ -696,12 +1112,18 @@
 
         updatePerformanceStats(stats) {
           document.getElementById('totalTime').textContent = `${stats.totalTime}ms`;
-          document.getElementById('fetchTime').textContent = `${stats.fetchTime}ms`;
+          
+          // 根据不同模式显示不同的时间统计
+          if (stats.fetchTime) {
+            document.getElementById('fetchTime').textContent = `${stats.fetchTime}ms`;
+          } else {
+            document.getElementById('fetchTime').textContent = '-';
+          }
           
           // 根据不同模式显示不同的传输时间
           const transferTimeElement = document.getElementById('transferTime');
           if (stats.downloadTime) {
-            // Blob模式
+            // Blob模式或WASM模式
             transferTimeElement.textContent = `${stats.downloadTime}ms`;
           } else if (stats.streamTime) {
             // Stream模式
@@ -711,7 +1133,16 @@
           }
           
           document.getElementById('decodeTime').textContent = `${stats.decodeTime}ms`;
-          document.getElementById('convertTime').textContent = `${stats.convertTime}ms`;
+          
+          // 对于WASM模式，显示WASM解码时间；其他模式显示转换时间
+          const convertTimeElement = document.getElementById('convertTime');
+          if (stats.wasmDecodeTime) {
+            convertTimeElement.textContent = `${stats.wasmDecodeTime}ms (WASM)`;
+          } else if (stats.convertTime) {
+            convertTimeElement.textContent = `${stats.convertTime}ms`;
+          } else {
+            convertTimeElement.textContent = '-';
+          }
         }
 
         displayModelInfo(info) {
