@@ -203,9 +203,12 @@ class Model3DAdmin(TortoiseModelAdmin):
                             if field_name == "thumbnail_url":
                                 if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
                                     raise ValueError(f"缩略图不支持的格式: {file_ext}")
-                            elif field_name in ["model_file_url", "binary_file_url"]:
-                                if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".bin", ".fastdog"]:
+                            elif field_name == "model_file_url":
+                                if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
                                     raise ValueError(f"模型文件不支持的格式: {file_ext}")
+                            elif field_name == "binary_file_url":
+                                if file_ext not in [".bin"]:
+                                    raise ValueError(f"二进制文件不支持的格式: {file_ext}")
                             
                             # 生成唯一文件名
                             from uuid import uuid4
@@ -300,6 +303,14 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     base64_data = file
                                     file_ext = '.bin'
                                 
+                                # 验证base64文件格式
+                                if field_name == "model_file_url":
+                                    if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
+                                        raise ValueError(f"模型文件不支持的格式: {file_ext}")
+                                elif field_name == "binary_file_url":
+                                    if file_ext not in [".bin", ".glb"]:
+                                        raise ValueError(f"二进制文件不支持的格式: {file_ext}")
+                                
                                 # 生成唯一文件名
                                 unique_filename = f"{uuid4().hex}{file_ext}"
                                 file_path = os.path.join(upload_dir, unique_filename)
@@ -318,8 +329,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                             except Exception as e:
                                 print(f"保存base64模型文件时出错: {str(e)}")
                                 # 如果base64处理失败，移除该字段
-                                payload.pop(field_name, None)
-            
+                                payload.pop(field_name, None)    
             # 保存模型
             result = await super().save_model(id, payload)
             
