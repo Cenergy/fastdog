@@ -1,13 +1,32 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from .schemas import ResourceCreate, ResourceUpdate, ResourceInDB
+from .schemas import (
+    ResourceCreate, ResourceUpdate, ResourceInDB,
+    Model3DCategoryCreate, Model3DCategoryUpdate, Model3DCategoryInDB,
+    Model3DCreate, Model3DUpdate, Model3DInDB
+)
 from .crud import (
     create_resource,
     get_resource,
     get_resources,
     update_resource,
     delete_resource,
-    count_resources
+    count_resources,
+    # Model3DCategory CRUD
+    create_model3d_category,
+    get_model3d_category,
+    get_model3d_categories,
+    update_model3d_category,
+    delete_model3d_category,
+    count_model3d_categories,
+    # Model3D CRUD
+    create_model3d,
+    get_model3d,
+    get_model3d_by_uuid,
+    get_model3ds,
+    update_model3d,
+    delete_model3d,
+    count_model3ds
 )
 from api.v1.deps import get_current_active_user
 from apps.users.models import User
@@ -21,6 +40,7 @@ import hashlib
 from functools import lru_cache
 from fastapi import Header, HTTPException
 from core.settings import settings
+from datetime import datetime
 
 router = APIRouter()
 
@@ -415,3 +435,145 @@ async def clear_cache(current_user: User = Depends(get_current_active_user)):
         "message": "Cache cleared successfully",
         "cleared_by": current_user.username if hasattr(current_user, 'username') else "unknown"
     }
+
+
+# Model3DCategory API endpoints
+@router.post("/categories/", response_model=Model3DCategoryInDB)
+async def create_model3d_category_api(
+    category: Model3DCategoryCreate,
+    current_user: User = Depends(get_current_active_user)
+) -> Model3DCategoryInDB:
+    """创建3D模型分类"""
+    db_category = await create_model3d_category(category)
+    return Model3DCategoryInDB.model_validate(db_category)
+
+@router.get("/categories/{category_id}", response_model=Model3DCategoryInDB)
+async def get_model3d_category_api(category_id: int) -> Model3DCategoryInDB:
+    """根据ID获取3D模型分类"""
+    category = await get_model3d_category(category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return Model3DCategoryInDB.model_validate(category)
+
+@router.get("/categories/", response_model=List[Model3DCategoryInDB])
+async def get_model3d_categories_api(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None
+) -> List[Model3DCategoryInDB]:
+    """获取3D模型分类列表"""
+    categories = await get_model3d_categories(
+        skip=skip, limit=limit, is_active=is_active, search=search
+    )
+    return [Model3DCategoryInDB.model_validate(category) for category in categories]
+
+@router.put("/categories/{category_id}", response_model=Model3DCategoryInDB)
+async def update_model3d_category_api(
+    category_id: int,
+    category: Model3DCategoryUpdate,
+    current_user: User = Depends(get_current_active_user)
+) -> Model3DCategoryInDB:
+    """更新3D模型分类"""
+    db_category = await update_model3d_category(category_id, category)
+    if not db_category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return Model3DCategoryInDB.model_validate(db_category)
+
+@router.delete("/categories/{category_id}")
+async def delete_model3d_category_api(
+    category_id: int,
+    current_user: User = Depends(get_current_active_user)
+) -> dict:
+    """删除3D模型分类"""
+    success = await delete_model3d_category(category_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"message": "Category deleted successfully"}
+
+@router.get("/categories/count/total", response_model=int)
+async def count_model3d_categories_api(
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None
+) -> int:
+    """获取3D模型分类总数"""
+    return await count_model3d_categories(is_active=is_active, search=search)
+
+
+# Model3D API endpoints
+@router.post("/models3d/", response_model=Model3DInDB)
+async def create_model3d_api(
+    model: Model3DCreate,
+    current_user: User = Depends(get_current_active_user)
+) -> Model3DInDB:
+    """创建3D模型"""
+    db_model = await create_model3d(model)
+    return Model3DInDB.model_validate(db_model)
+
+@router.get("/models3d/{model_id}", response_model=Model3DInDB)
+async def get_model3d_api(model_id: int) -> Model3DInDB:
+    """根据ID获取3D模型"""
+    model = await get_model3d(model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return Model3DInDB.model_validate(model)
+
+@router.get("/models3d/uuid/{uuid}", response_model=Model3DInDB)
+async def get_model3d_by_uuid_api(uuid: str) -> Model3DInDB:
+    """根据UUID获取3D模型"""
+    model = await get_model3d_by_uuid(uuid)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return Model3DInDB.model_validate(model)
+
+@router.get("/models3d/", response_model=List[Model3DInDB])
+async def get_model3ds_api(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    category_id: Optional[int] = None,
+    is_active: Optional[bool] = None,
+    is_public: Optional[bool] = None,
+    search: Optional[str] = None
+) -> List[Model3DInDB]:
+    """获取3D模型列表"""
+    models = await get_model3ds(
+        skip=skip, limit=limit, category_id=category_id,
+        is_active=is_active, is_public=is_public, search=search
+    )
+    return [Model3DInDB.model_validate(model) for model in models]
+
+@router.put("/models3d/{model_id}", response_model=Model3DInDB)
+async def update_model3d_api(
+    model_id: int,
+    model: Model3DUpdate,
+    current_user: User = Depends(get_current_active_user)
+) -> Model3DInDB:
+    """更新3D模型"""
+    db_model = await update_model3d(model_id, model)
+    if not db_model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return Model3DInDB.model_validate(db_model)
+
+@router.delete("/models3d/{model_id}")
+async def delete_model3d_api(
+    model_id: int,
+    current_user: User = Depends(get_current_active_user)
+) -> dict:
+    """删除3D模型"""
+    success = await delete_model3d(model_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return {"message": "Model deleted successfully"}
+
+@router.get("/models3d/count/total", response_model=int)
+async def count_model3ds_api(
+    category_id: Optional[int] = None,
+    is_active: Optional[bool] = None,
+    is_public: Optional[bool] = None,
+    search: Optional[str] = None
+) -> int:
+    """获取3D模型总数"""
+    return await count_model3ds(
+        category_id=category_id, is_active=is_active,
+        is_public=is_public, search=search
+    )
