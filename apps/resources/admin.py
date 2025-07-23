@@ -290,12 +290,35 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     # 从header中提取文件扩展名
                                     if 'gltf' in header.lower():
                                         file_ext = '.gltf'
-                                    elif 'glb' in header.lower() or 'octet-stream' in header.lower():
+                                    elif 'glb' in header.lower():
                                         file_ext = '.glb'
                                     elif 'obj' in header.lower():
                                         file_ext = '.obj'
                                     elif 'fbx' in header.lower():
                                         file_ext = '.fbx'
+                                    elif 'octet-stream' in header.lower():
+                                        # 对于 octet-stream，尝试从文件内容判断类型
+                                        try:
+                                            # 解码一小部分数据来检测文件类型
+                                            sample_data = base64.b64decode(base64_data[:200])  # 取前200个字符解码
+                                            
+                                            # 检查 GLB 文件魔数 (glTF)
+                                            if sample_data.startswith(b'glTF'):
+                                                file_ext = '.glb'
+                                            else:
+                                                # 尝试解码为文本检查是否为 gltf JSON
+                                                try:
+                                                    sample_text = sample_data.decode('utf-8')
+                                                    # 更严格的 gltf JSON 检测
+                                                    if (sample_text.strip().startswith('{') and 
+                                                        ('"asset"' in sample_text or '"scene' in sample_text or '"nodes"' in sample_text)):
+                                                        file_ext = '.gltf'
+                                                    else:
+                                                        file_ext = '.bin'
+                                                except UnicodeDecodeError:
+                                                    file_ext = '.bin'  # 无法解码为文本，是二进制文件
+                                        except:
+                                            file_ext = '.bin'  # 解码失败，默认为二进制文件
                                     else:
                                         file_ext = '.bin'  # 默认为二进制文件
                                 else:
