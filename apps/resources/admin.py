@@ -8,10 +8,39 @@ import os
 import base64
 import hashlib
 import json
+import struct
+import zlib
+import io
 from datetime import datetime
 from typing import List
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
+
+
+def convert_gltf_to_binary(gltf_data: dict) -> bytes:
+    """将GLTF数据转换为自定义二进制格式"""
+    # 创建二进制数据结构
+    binary_data = io.BytesIO()
+    
+    # 写入文件头 (8字节魔数 + 4字节版本)
+    binary_data.write(b'FASTDOG1')  # 魔数
+    binary_data.write(struct.pack('<I', 1))  # 版本号
+    
+    # 序列化JSON数据
+    json_str = json.dumps(gltf_data, separators=(',', ':'))
+    json_bytes = json_str.encode('utf-8')
+    
+    # 压缩JSON数据 (优化压缩级别以平衡速度和压缩比)
+    compressed_json = zlib.compress(json_bytes, level=6)
+    
+    # 写入压缩数据长度和数据
+    binary_data.write(struct.pack('<I', len(compressed_json)))
+    binary_data.write(compressed_json)
+    
+    # 写入原始数据长度（用于验证）
+    binary_data.write(struct.pack('<I', len(json_bytes)))
+    
+    return binary_data.getvalue()
 
 
 @register(Resource)
@@ -357,6 +386,30 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     f.write(model_data)
                                     f.flush()
                                     os.fsync(f.fileno())
+                                
+                                # 如果是gltf文件，同时生成压缩的二进制文件
+                                if field_name == "model_file_url" and file_ext == ".gltf":
+                                    try:
+                                        # 解析gltf JSON数据
+                                        gltf_json = json.loads(model_data.decode('utf-8'))
+                                        
+                                        # 生成压缩的二进制文件
+                                        compressed_data = convert_gltf_to_binary(gltf_json)
+                                        
+                                        # 保存压缩文件
+                                        compressed_filename = f"{str(model_uuid)}.fastdog"
+                                        compressed_file_path = os.path.join(upload_dir, compressed_filename)
+                                        
+                                        with open(compressed_file_path, "wb") as cf:
+                                            cf.write(compressed_data)
+                                            cf.flush()
+                                            os.fsync(cf.fileno())
+                                        
+                                        # 更新binary_file_url到payload
+                                        # payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
+                                        
+                                    except Exception as e:
+                                        print(f"生成压缩二进制文件时出错: {str(e)}")
                                 
                                 # 更新文件URL到payload
                                 payload[field_name] = f"/static/uploads/models/{unique_filename}"
