@@ -1,5 +1,10 @@
 from tortoise import fields, models
 from enum import Enum
+import uuid
+
+def generate_uuid_hex():
+    """生成无连字符的UUID字符串"""
+    return uuid.uuid4().hex
 
 class ResourceType(str, Enum):
     VIDEO = "video"
@@ -58,6 +63,7 @@ class Model3D(models.Model):
     """3D模型管理"""
     
     # 基本信息
+    uuid = fields.CharField(max_length=32, default=generate_uuid_hex, description="模型唯一标识符", unique=True)
     name = fields.CharField(max_length=255, description="模型名称")
     description = fields.TextField(description="模型描述", null=True)
 
@@ -76,7 +82,7 @@ class Model3D(models.Model):
     
     # 状态标志
     is_active = fields.BooleanField(default=True, description="是否可用")
-    is_public = fields.BooleanField(default=False, description="是否公开")
+    is_public = fields.BooleanField(default=True, description="是否公开")
     
     class Meta:
         table = "models_3d"

@@ -166,6 +166,7 @@ class Model3DAdmin(TortoiseModelAdmin):
     search_fields = ["name", "description"]
     list_per_page = 15
     ordering = ["-created_at"]
+    readonly_fields = ["uuid"]  # 设置UUID为只读字段，查看时显示但不可编辑
     
     form_fields = {
         "name": CharField(max_length=255, description="模型名称"),
@@ -184,6 +185,20 @@ class Model3DAdmin(TortoiseModelAdmin):
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         # 处理上传的模型文件
         try:
+            # 获取或生成模型UUID
+            model_uuid = None
+            if id:
+                # 编辑现有模型，获取现有UUID
+                existing_model = await self.model.get(id=id)
+                model_uuid = existing_model.uuid
+            else:
+                # 新建模型，生成新UUID
+                import uuid
+                model_uuid = uuid.uuid4().hex
+            
+            # 确保payload中不包含用户输入的uuid字段
+            payload.pop('uuid', None)
+            
             # 需要处理的文件字段
             file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
             
@@ -210,9 +225,8 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 if file_ext not in [".bin"]:
                                     raise ValueError(f"二进制文件不支持的格式: {file_ext}")
                             
-                            # 生成唯一文件名
-                            from uuid import uuid4
-                            unique_filename = f"{uuid4().hex}{file_ext}"
+                            # 使用模型UUID生成文件名
+                            unique_filename = f"{str(model_uuid)}{file_ext}"
                             file_path = os.path.join(upload_dir, unique_filename)
                             
                             # 读取文件内容
@@ -234,7 +248,6 @@ class Model3DAdmin(TortoiseModelAdmin):
                     elif isinstance(file, str) and is_valid_base64(file):
                         import base64
                         import re
-                        from uuid import uuid4
                         
                         # 确保上传目录存在
                         upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "models")
@@ -253,8 +266,8 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
                                     raise ValueError(f"缩略图不支持的格式: {file_type}")
                                     
-                                # 生成唯一文件名
-                                unique_filename = f"{uuid4().hex}.{file_type}"
+                                # 使用模型UUID生成文件名
+                                unique_filename = f"{str(model_uuid)}.{file_type}"
                                 file_path = os.path.join(upload_dir, unique_filename)
                                 
                                 try:
@@ -334,8 +347,8 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     if file_ext not in [".bin", ".glb"]:
                                         raise ValueError(f"二进制文件不支持的格式: {file_ext}")
                                 
-                                # 生成唯一文件名
-                                unique_filename = f"{uuid4().hex}{file_ext}"
+                                # 使用模型UUID生成文件名
+                                unique_filename = f"{str(model_uuid)}{file_ext}"
                                 file_path = os.path.join(upload_dir, unique_filename)
                                 
                                 # 解码base64并保存文件
@@ -353,6 +366,10 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 print(f"保存base64模型文件时出错: {str(e)}")
                                 # 如果base64处理失败，移除该字段
                                 payload.pop(field_name, None)    
+            # 对于新建模型，将生成的UUID添加到payload中
+            if not id:
+                payload['uuid'] = model_uuid
+            
             # 保存模型
             result = await super().save_model(id, payload)
             
