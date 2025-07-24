@@ -577,3 +577,123 @@ async def count_model3ds_api(
         category_id=category_id, is_active=is_active,
         is_public=is_public, search=search
     )
+
+
+@router.get("/models/uuid/{uuid}")
+async def stream_model_by_uuid(uuid: str, range: str = Header(None)):
+    """根据模型UUID以自定义二进制格式流式传输模型"""
+    # 首先从数据库获取模型信息
+    model = await get_model3d_by_uuid(uuid)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # 检查模型是否有文件URL
+    if not model.model_file_url:
+        raise HTTPException(status_code=404, detail="Model file not found")
+    
+    # 从URL中提取文件名并构建完整文件路径
+    filename = os.path.basename(model.model_file_url)
+    
+    # 构建完整的文件路径
+    if model.model_file_url.startswith('/static/'):
+        # 移除开头的 '/static/' 并构建完整路径
+        file_path = model.model_file_url
+    else:
+        # 兼容旧格式，直接使用文件名
+        file_path = os.path.join(settings.STATIC_DIR, "models", filename)
+    
+
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Model file not found on disk: {file_path}")
+    
+    try:
+        # 检查是否存在对应的 .fastdog 文件
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        fastdog_filename = f"{base_name}.fastdog"
+        # 基于原文件路径构建 .fastdog 文件路径
+        fastdog_path = os.path.join(os.path.dirname(file_path), fastdog_filename)
+        
+
+        
+        if os.path.exists(fastdog_path):
+            # 如果 .fastdog 文件存在，直接读取
+            with open(fastdog_path, 'rb') as f:
+                binary_data = f.read()
+            file_size = len(binary_data)
+            cache_key = get_cache_key(fastdog_path)
+            cache_status = "FASTDOG_DIRECT"
+            
+            # 更新缓存统计
+            cache_stats["total_requests"] += 1
+            cache_stats["hits"] += 1  # 视为缓存命中，因为避免了转换
+        else:
+            # 如果 .fastdog 文件不存在，使用原有的转换流程
+            # 生成缓存键
+            cache_key = get_cache_key(file_path)
+            
+            # 更新缓存统计
+            cache_stats["total_requests"] += 1
+            cache_info = cached_convert_gltf_to_binary.cache_info()
+            
+            # 使用缓存转换GLTF文件
+            binary_data = cached_convert_gltf_to_binary(file_path, cache_key)
+            file_size = len(binary_data)
+            
+            # 检查是否为缓存命中
+            new_cache_info = cached_convert_gltf_to_binary.cache_info()
+            if new_cache_info.hits > cache_info.hits:
+                cache_stats["hits"] += 1
+                cache_status = "HIT"
+            else:
+                cache_stats["misses"] += 1
+                cache_status = "MISS"
+        
+        # 处理Range请求
+        if range:
+            start, end = range.replace("bytes=", "").split("-")
+            start = int(start)
+            end = min(file_size - 1, int(end) if end else file_size - 1)
+        else:
+            start, end = 0, file_size - 1
+        
+        def binary_iterator():
+            data_stream = io.BytesIO(binary_data)
+            data_stream.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                # 优化块大小以减少系统调用
+                chunk_size = min(4 * 1024 * 1024, remaining)  # 4MB chunks
+                chunk = data_stream.read(chunk_size)
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+        
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "X-Original-Size": str(os.path.getsize(file_path)),
+            "X-Compression-Ratio": f"{file_size / os.path.getsize(file_path):.2f}",
+            "X-Format": "fastdog-binary-v1",
+            "X-Cache-Key": cache_key,
+            "X-Cache-Status": cache_status,
+            "X-Cache-Hit-Rate": f"{(cache_stats['hits'] / cache_stats['total_requests'] * 100):.1f}%" if cache_stats['total_requests'] > 0 else "0.0%",
+            "Cache-Control": "public, max-age=3600",  # 1小时缓存
+            "ETag": f'"{cache_key}"',
+            "X-Model-ID": str(model.id),
+            "X-Model-Name": model.name,
+            "X-Model-UUID": model.uuid
+        }
+        
+        return StreamingResponse(
+            binary_iterator(), 
+            status_code=206 if range else 200, 
+            headers=headers, 
+            media_type="application/octet-stream"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to convert model: {str(e)}")
+
