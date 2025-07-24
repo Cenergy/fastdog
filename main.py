@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from core.settings import settings
 from core.database import init_db, close_db
 from core.logging import setup_logging
@@ -15,9 +16,26 @@ from fastapi.openapi.docs import get_swagger_ui_html
 # 初始化日志系统
 logger = setup_logging()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动事件
+    await init_db()
+    # 启动任务调度器
+    from apps.tasks.scheduler import scheduler
+    await scheduler.start()
+    
+    yield
+    
+    # 关闭事件
+    await close_db()
+    # 关闭任务调度器
+    from apps.tasks.scheduler import scheduler
+    await scheduler.shutdown()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    docs_url=None  # 禁用默认的docs路由，我们将自定义它
+    docs_url=None,  # 禁用默认的docs路由，我们将自定义它
+    lifespan=lifespan
 )
 
 import os
@@ -50,20 +68,6 @@ async def custom_swagger_ui_html():
 
 # 设置FastAdmin后台管理
 app = setup_admin(app)
-
-@app.on_event("startup")
-async def startup_event():
-    await init_db()
-    # 启动任务调度器
-    from apps.tasks.scheduler import scheduler
-    await scheduler.start()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_db()
-    # 关闭任务调度器
-    from apps.tasks.scheduler import scheduler
-    await scheduler.shutdown()
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
