@@ -72,9 +72,9 @@ class Model3D(models.Model):
     category = fields.ForeignKeyField('models.Model3DCategory', related_name='models', description="所属分类", null=True)
     
     # 模型文件
-    model_file_url = fields.CharField(max_length=1024, description="主模型文件URL", null=True)
-    binary_file_url = fields.CharField(max_length=1024, description="二进制文件URL(用于GLB+BIN)", null=True)
-    thumbnail_url = fields.CharField(max_length=1024, description="预览图URL", null=True)
+    model_file_url = fields.TextField(description="主模型文件URL", null=True)
+    binary_file_url = fields.TextField(description="二进制文件URL(用于GLB+BIN)", null=True)
+    thumbnail_url = fields.TextField(description="预览图URL", null=True)
     
     # 时间戳
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")

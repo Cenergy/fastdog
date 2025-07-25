@@ -628,7 +628,10 @@
               headers['Authorization'] = `Bearer ${this.authToken}`;
             }
 
-            const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
+            // const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
+            //   headers
+            // });
+            const response = await fetch(`/api/v1/resources/models/uuid/643fde5910e04622b5581909c276cbf1`, {
               headers
             });
 

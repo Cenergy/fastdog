@@ -1,6 +1,6 @@
 from .models import Resource, ResourceType, Model3D, ModelFormat, Model3DCategory
 from fastadmin import TortoiseModelAdmin, register, action, display, TortoiseInlineModelAdmin, WidgetType
-from tortoise.fields import CharField
+from tortoise.fields import CharField,TextField
 from fastapi.responses import JSONResponse
 from fastapi import UploadFile
 from uuid import UUID
@@ -15,6 +15,63 @@ from datetime import datetime
 from typing import List
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
+
+
+def parse_glb_to_gltf(glb_data: bytes) -> dict:
+    """解析GLB二进制文件为GLTF JSON数据"""
+    if len(glb_data) < 12:
+        raise ValueError("GLB文件太小，无法解析")
+    
+    # 读取GLB文件头
+    magic = glb_data[:4]
+    if magic != b'glTF':
+        raise ValueError("不是有效的GLB文件")
+    
+    version = struct.unpack('<I', glb_data[4:8])[0]
+    if version != 2:
+        raise ValueError(f"不支持的GLB版本: {version}")
+    
+    length = struct.unpack('<I', glb_data[8:12])[0]
+    
+    # 读取JSON chunk
+    offset = 12
+    json_chunk_length = struct.unpack('<I', glb_data[offset:offset+4])[0]
+    json_chunk_type = glb_data[offset+4:offset+8]
+    
+    if json_chunk_type != b'JSON':
+        raise ValueError("GLB文件格式错误：缺少JSON chunk")
+    
+    json_data = glb_data[offset+8:offset+8+json_chunk_length]
+    gltf_json = json.loads(json_data.decode('utf-8'))
+    
+    return gltf_json
+
+
+def convert_model_to_binary(model_data: bytes, file_ext: str) -> bytes:
+    """将各种3D模型格式转换为自定义二进制格式"""
+    if file_ext == ".gltf":
+        # GLTF文本格式
+        gltf_json = json.loads(model_data.decode('utf-8'))
+    elif file_ext == ".glb":
+        # GLB二进制格式
+        gltf_json = parse_glb_to_gltf(model_data)
+    elif file_ext in [".obj", ".fbx"]:
+        # 对于OBJ和FBX格式，创建一个简化的GLTF结构
+        # 这里只是保存原始数据，实际项目中可能需要更复杂的转换
+        gltf_json = {
+            "asset": {"version": "2.0", "generator": "FastDog Converter"},
+            "extensionsUsed": ["FASTDOG_ORIGINAL_FORMAT"],
+            "extensions": {
+                "FASTDOG_ORIGINAL_FORMAT": {
+                    "format": file_ext,
+                    "data": base64.b64encode(model_data).decode('utf-8')
+                }
+            }
+        }
+    else:
+        raise ValueError(f"不支持的文件格式: {file_ext}")
+    
+    return convert_gltf_to_binary(gltf_json)
 
 
 def convert_gltf_to_binary(gltf_data: dict) -> bytes:
@@ -98,8 +155,7 @@ class ResourceModelAdmin(TortoiseModelAdmin):
                         # 更新图片URL到payload
                         payload["image_url"] = f"/static/uploads/resources/{unique_filename}"
                     except Exception as e:
-                        print(f"保存上传文件时出错: {str(e)}")
-                        raise e
+                         raise e
                 elif isinstance(file, str) and is_valid_base64(file):
                     # 处理base64编码的图片
                     import base64
@@ -134,7 +190,6 @@ class ResourceModelAdmin(TortoiseModelAdmin):
                                 f.flush()
                                 os.fsync(f.fileno())
                         except Exception as e:
-                            print(f"保存base64图片时出错: {str(e)}")
                             raise ValueError("无效的base64图片数据")
                     else:
                         raise ValueError("无效的base64图片格式")
@@ -142,27 +197,20 @@ class ResourceModelAdmin(TortoiseModelAdmin):
                     # 更新图片URL到payload
                     payload["image_url"] = f"/static/uploads/resources/{unique_filename}"
             
-            # 确保image_url字段被正确设置
-            if "image_url" in payload and payload["image_url"] and payload["image_url"].startswith("/static/"):
-                print(f"Image URL before save: {payload['image_url']}")
-                
             # 保存资源
             result = await super().save_model(id, payload)
             
             # 验证保存结果
             if result:
                 saved_resource = await self.model.get(id=result["id"])
-                print(f"Saved resource image_url: {saved_resource.image_url}")
                 
                 # 如果image_url没有正确保存，尝试直接更新
                 if "image_url" in payload and payload["image_url"] and saved_resource.image_url != payload["image_url"]:
                     saved_resource.image_url = payload["image_url"]
                     await saved_resource.save()
-                    print(f"Updated resource image_url: {saved_resource.image_url}")
             
             return result
         except Exception as e:
-            print(f"Error saving resource: {str(e)}")
             raise e
 
 
@@ -199,16 +247,41 @@ class Model3DAdmin(TortoiseModelAdmin):
     
     form_fields = {
         "name": CharField(max_length=255, description="模型名称"),
-        "description": CharField(max_length=1024, description="模型描述", required=False),
+        "description": TextField(description="模型描述", required=False),
         "category": CharField(max_length=255, description="所属分类", required=False),
-        "model_file_url": CharField(max_length=1024, description="模型文件", required=False),
-        "binary_file_url": CharField(max_length=1024, description="二进制文件", required=False),
-        "thumbnail_url": CharField(max_length=1024, description="预览图", required=False)
+        "model_file_url": TextField(description="模型文件", required=False),
+        "binary_file_url": TextField(description="二进制文件", required=False),
+        "thumbnail_url": TextField(description="预览图", required=False)
     }
     formfield_overrides = {  # noqa: RUF012
-        "model_file_url": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"}),
-        "binary_file_url": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"}),
-        "thumbnail_url": (WidgetType.Upload, {"required": False, "upload_action_name": "upload"})
+          "model_file_url": (WidgetType.Upload, {
+            "required": False,
+            "upload_action_name": "upload",
+            "accept": ".glb,.gltf,.obj,.fbx,.fastdog",
+            "multiple": False,
+            "showUploadList": True,
+            "maxCount": 1,
+            "maxFileSize": 50 * 1024 * 1024,  # 50MB
+        }),
+        "binary_file_url": (WidgetType.Upload, {
+            "required": False,
+            "upload_action_name": "upload",
+            "accept": ".bin,.fastdog",
+            "multiple": False,
+            "showUploadList": True,
+            "maxCount": 1,
+            "maxFileSize": 50 * 1024 * 1024,  # 50MB
+        }),
+        "thumbnail_url": (WidgetType.Upload, {
+            "required": False,
+            "upload_action_name": "upload",
+            "accept": ".jpg,.jpeg,.png,.gif,.webp",
+            "multiple": False,
+            "showUploadList": True,
+            "listType": "picture",
+            "maxCount": 1,
+            "maxFileSize": 10 * 1024 * 1024,  # 10MB
+        }) 
     }
     
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
@@ -269,12 +342,10 @@ class Model3DAdmin(TortoiseModelAdmin):
                             
                             # 更新文件URL到payload
                             payload[field_name] = f"/static/uploads/models/{unique_filename}"
-                            print(f"Saved {field_name}: {payload[field_name]}")
                             
                         except Exception as e:
-                            print(f"保存{field_name}文件时出错: {str(e)}")
                             raise e
-                    elif isinstance(file, str) and is_valid_base64(file):
+                    elif isinstance(file, str) and (is_valid_base64(file) or file.startswith('data:')):
                         import base64
                         import re
                         
@@ -309,10 +380,8 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     
                                     # 更新文件URL到payload
                                     payload[field_name] = f"/static/uploads/models/{unique_filename}"
-                                    print(f"Saved base64 {field_name}: {payload[field_name]}")
                                     
                                 except Exception as e:
-                                    print(f"保存base64缩略图时出错: {str(e)}")
                                     raise ValueError("无效的base64图片数据")
                             else:
                                 raise ValueError("无效的base64图片格式")
@@ -321,9 +390,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                             try:
                                 # 检查base64数据长度，避免过大文件
                                 if len(file) > 50 * 1024 * 1024:  # 50MB限制
-                                    print(f"警告: {field_name} base64数据过大 ({len(file)} 字符)，建议使用文件上传")
-                                    payload.pop(field_name, None)
-                                    continue
+                                    raise ValueError(f"文件过大({len(file)}字符)，建议不超过30MB，请使用文件上传方式")
                                 
                                 # 尝试解析base64数据
                                 if file.startswith('data:'):
@@ -338,6 +405,9 @@ class Model3DAdmin(TortoiseModelAdmin):
                                         file_ext = '.obj'
                                     elif 'fbx' in header.lower():
                                         file_ext = '.fbx'
+                                    elif 'application/json' in header.lower():
+                                        # JSON格式，可能是gltf
+                                        file_ext = '.gltf'
                                     elif 'octet-stream' in header.lower():
                                         # 对于 octet-stream，尝试从文件内容判断类型
                                         try:
@@ -387,14 +457,11 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     f.flush()
                                     os.fsync(f.fileno())
                                 
-                                # 如果是gltf文件，同时生成压缩的二进制文件
-                                if field_name == "model_file_url" and file_ext == ".gltf":
+                                # 如果是3D模型文件，同时生成压缩的二进制文件
+                                if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
                                     try:
-                                        # 解析gltf JSON数据
-                                        gltf_json = json.loads(model_data.decode('utf-8'))
-                                        
-                                        # 生成压缩的二进制文件
-                                        compressed_data = convert_gltf_to_binary(gltf_json)
+                                        # 使用统一的转换函数处理各种格式
+                                        compressed_data = convert_model_to_binary(model_data, file_ext)
                                         
                                         # 保存压缩文件
                                         compressed_filename = f"{str(model_uuid)}.fastdog"
@@ -406,22 +473,29 @@ class Model3DAdmin(TortoiseModelAdmin):
                                             os.fsync(cf.fileno())
                                         
                                         # 更新binary_file_url到payload
-                                        # payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
+                                        payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
                                         
                                     except Exception as e:
-                                        print(f"生成压缩二进制文件时出错: {str(e)}")
+                                        pass  # 生成压缩二进制文件失败，继续处理
                                 
                                 # 更新文件URL到payload
                                 payload[field_name] = f"/static/uploads/models/{unique_filename}"
-                                print(f"Saved base64 {field_name}: {payload[field_name]} (size: {len(model_data)} bytes)")
                                 
                             except Exception as e:
-                                print(f"保存base64模型文件时出错: {str(e)}")
-                                # 如果base64处理失败，移除该字段
-                                payload.pop(field_name, None)    
+                                # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
+                                payload.pop(field_name, None)
+                                continue    
             # 对于新建模型，将生成的UUID添加到payload中
             if not id:
                 payload['uuid'] = model_uuid
+            
+            # 验证文件URL字段长度，确保不超过数据库限制
+            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+            for field_name in file_fields:
+                if field_name in payload and payload[field_name]:
+                    url_value = payload[field_name]
+                    if isinstance(url_value, str) and len(url_value) > 2048:
+                        payload.pop(field_name, None)
             
             # 保存模型
             result = await super().save_model(id, payload)
@@ -429,7 +503,6 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 验证保存结果
             if result:
                 saved_model = await self.model.get(id=result["id"])
-                print(f"Saved model files - model: {saved_model.model_file_url}, binary: {saved_model.binary_file_url}, thumbnail: {saved_model.thumbnail_url}")
                 
                 # 如果文件URL没有正确保存，尝试直接更新
                 update_needed = False
@@ -440,11 +513,9 @@ class Model3DAdmin(TortoiseModelAdmin):
                 
                 if update_needed:
                     await saved_model.save()
-                    print(f"Updated model file URLs")
             
             return result
         except Exception as e:
-            print(f"Error saving 3D model: {str(e)}")
             raise e
     
     async def delete_model(self, id: str) -> bool:
@@ -471,12 +542,11 @@ class Model3DAdmin(TortoiseModelAdmin):
                 try:
                     os.remove(file_path)
                 except Exception as e:
-                    print(f"Warning: Failed to delete {field_name} file {file_path}: {str(e)}")
                     # 文件删除失败不影响整体操作
+                    pass
             
             # 删除数据库记录
             return await super().delete_model(id)
             
         except Exception as e:
-            print(f"Error deleting 3D model: {str(e)}")
             raise e

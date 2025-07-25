@@ -47,7 +47,18 @@ def setup_logging():
     logger.configure(
         handlers=[
             {"sink": sys.stdout, "format": log_format, "level": log_level, "filter": debug_filter},
-            {"sink": str(logs_dir / "app.log"), "rotation": settings.LOG_ROTATION, "retention": "10 days", "compression": "zip", "format": log_format, "level": log_level, "enqueue": True, "buffering": 4096, "filter": debug_filter},
+            {
+                "sink": str(logs_dir / "app.log"), 
+                "rotation": "100 MB",  # 减小轮转大小，避免大文件权限问题
+                "retention": "7 days",  # 减少保留天数
+                "compression": None,    # 禁用压缩，避免权限问题
+                "format": log_format, 
+                "level": log_level, 
+                "enqueue": True, 
+                "buffering": 1024,      # 减小缓冲区
+                "filter": debug_filter,
+                "delay": True           # 延迟创建文件
+            },
         ],
         levels=[{"name": "DEBUG", "color": "<blue>"}],
     )

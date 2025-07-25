@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
     LOG_FILE_PATH: str = "logs/app.log"
-    LOG_ROTATION: str = "500 MB"
+    LOG_ROTATION: str = "100 MB"  # 减小轮转大小，避免Windows权限问题
 
     # ==================== 文件上传配置 ====================
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB

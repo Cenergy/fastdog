@@ -597,7 +597,8 @@ async def stream_model_by_uuid(uuid: str, range: str = Header(None)):
     # 构建完整的文件路径
     if model.model_file_url.startswith('/static/'):
         # 移除开头的 '/static/' 并构建完整路径
-        file_path = model.model_file_url
+        relative_path = model.model_file_url[8:]  # 移除 '/static/'
+        file_path = os.path.join(settings.STATIC_DIR, relative_path)
     else:
         # 兼容旧格式，直接使用文件名
         file_path = os.path.join(settings.STATIC_DIR, "models", filename)
