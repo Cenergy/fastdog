@@ -52,9 +52,11 @@ def convert_model_to_binary(model_data: bytes, file_ext: str) -> bytes:
     if file_ext == ".gltf":
         # GLTF文本格式
         gltf_json = json.loads(model_data.decode('utf-8'))
+        return convert_gltf_to_binary(gltf_json)
     elif file_ext == ".glb":
-        # GLB二进制格式
-        gltf_json = parse_glb_to_gltf(model_data)
+        # GLB二进制格式 - 保留完整的GLB数据
+        # 对于GLB文件，我们直接保存原始二进制数据，因为它已经是优化的二进制格式
+        return convert_glb_to_fastdog_binary(model_data)
     elif file_ext in [".obj", ".fbx"]:
         # 对于OBJ和FBX格式，创建一个简化的GLTF结构
         # 这里只是保存原始数据，实际项目中可能需要更复杂的转换
@@ -68,10 +70,31 @@ def convert_model_to_binary(model_data: bytes, file_ext: str) -> bytes:
                 }
             }
         }
+        return convert_gltf_to_binary(gltf_json)
     else:
         raise ValueError(f"不支持的文件格式: {file_ext}")
+
+
+def convert_glb_to_fastdog_binary(glb_data: bytes) -> bytes:
+    """将GLB二进制数据转换为FastDog二进制格式"""
+    # 创建二进制数据结构
+    binary_data = io.BytesIO()
     
-    return convert_gltf_to_binary(gltf_json)
+    # 写入文件头 (8字节魔数 + 4字节版本)
+    binary_data.write(b'FASTDOG1')  # 魔数
+    binary_data.write(struct.pack('<I', 2))  # 版本号2表示GLB格式
+    
+    # 压缩GLB数据 (使用较高的压缩级别，因为GLB已经是二进制格式)
+    compressed_glb = zlib.compress(glb_data, level=9)
+    
+    # 写入压缩数据长度和数据
+    binary_data.write(struct.pack('<I', len(compressed_glb)))
+    binary_data.write(compressed_glb)
+    
+    # 写入原始数据长度（用于验证）
+    binary_data.write(struct.pack('<I', len(glb_data)))
+    
+    return binary_data.getvalue()
 
 
 def convert_gltf_to_binary(gltf_data: dict) -> bytes:
@@ -81,7 +104,7 @@ def convert_gltf_to_binary(gltf_data: dict) -> bytes:
     
     # 写入文件头 (8字节魔数 + 4字节版本)
     binary_data.write(b'FASTDOG1')  # 魔数
-    binary_data.write(struct.pack('<I', 1))  # 版本号
+    binary_data.write(struct.pack('<I', 1))  # 版本号1表示GLTF格式
     
     # 序列化JSON数据
     json_str = json.dumps(gltf_data, separators=(',', ':'))
