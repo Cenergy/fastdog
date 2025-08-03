@@ -275,6 +275,9 @@
             <button id="loadBtn">🚀 加载模型</button>
             <button id="infoBtn">📋 获取信息</button>
           </div>
+          <div class="form-group">
+            <button id="originLoadBtn">直接加载</button>
+          </div>
         </div>
 
         <!-- 渲染控制 -->
@@ -514,6 +517,9 @@
             .getElementById("infoBtn")
             .addEventListener("click", () => this.getModelInfo());
           document
+            .getElementById("originLoadBtn")
+            .addEventListener("click", () => this.loadOriginalModel());
+          document
             .getElementById("resetBtn")
             .addEventListener("click", () => this.resetCamera());
           document
@@ -705,6 +711,97 @@
           } catch (error) {
             console.error('WASM 模型加载失败:', error);
             throw error;
+          }
+        }
+
+        async loadOriginalModel() {
+          const filename = document.getElementById("modelSelect").value;
+          const originLoadBtn = document.getElementById("originLoadBtn");
+          const loading = document.getElementById("loading");
+
+          if (!filename) {
+            alert("请先选择一个模型文件");
+            return;
+          }
+          
+          // 验证文件格式
+          const validExtensions = ['.glb', '.gltf'];
+          const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+          if (!validExtensions.includes(fileExtension)) {
+            alert("请选择有效的模型文件格式 (.glb 或 .gltf)");
+            return;
+          }
+
+          originLoadBtn.disabled = true;
+          loading.style.display = "block";
+
+          try {
+            this.updateProgress(0, "开始加载原始模型...");
+
+            // 直接加载GLB/GLTF文件
+            const loader = new GLTFLoader();
+            const modelUrl = `../models/${filename}`;
+            
+            this.updateProgress(50, "下载模型文件中...");
+            
+            const gltf = await new Promise((resolve, reject) => {
+              loader.load(
+                modelUrl,
+                (gltf) => resolve(gltf),
+                (progress) => {
+                  const percentage = (progress.loaded / progress.total) * 100;
+                  this.updateProgress(percentage, "下载中...");
+                },
+                (error) => reject(error)
+              );
+            });
+
+            this.updateProgress(100, "加载完成!");
+
+            // 移除旧模型
+            if (this.currentModel) {
+              this.scene.remove(this.currentModel);
+            }
+
+            // 添加新模型
+            this.currentModel = gltf.scene;
+            this.currentModel.castShadow = true;
+            this.currentModel.receiveShadow = true;
+            
+            // 为所有子对象设置阴影
+            this.currentModel.traverse((child) => {
+              if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+              }
+            });
+            
+            this.scene.add(this.currentModel);
+
+            // 调整相机位置
+            this.fitCameraToModel();
+
+            // 更新信息
+            this.updateModelInfo({
+              format: 'original',
+              triangles: this.countTriangles(this.currentModel),
+              vertices: this.countVertices(this.currentModel)
+            });
+            
+          } catch (error) {
+            console.error("加载原始模型失败:", error);
+            console.error("模型URL:", modelUrl);
+            const errorMsg = error.message || '未知错误';
+            this.updateProgress(0, `加载失败: ${errorMsg}`);
+            this.updateInfo("错误", `无法加载模型文件: ${errorMsg}`);
+            
+            // 检查文件是否存在的提示
+            if (error.type === 'error' || error.status === 404) {
+              this.updateInfo("提示", `请确认模型文件 ${filename} 存在于 static/models/ 目录中`);
+            }
+          } finally {
+            originLoadBtn.disabled = false;
+            loading.style.display = "none";
           }
         }
 
@@ -1286,6 +1383,30 @@
           requestAnimationFrame(() => this.animate());
           this.controls.update();
           this.renderer.render(this.scene, this.camera);
+        }
+
+        countTriangles(object) {
+          let triangleCount = 0;
+          object.traverse((child) => {
+            if (child.isMesh && child.geometry) {
+              if (child.geometry.index) {
+                triangleCount += child.geometry.index.count / 3;
+              } else {
+                triangleCount += child.geometry.attributes.position.count / 3;
+              }
+            }
+          });
+          return Math.floor(triangleCount);
+        }
+
+        countVertices(object) {
+          let vertexCount = 0;
+          object.traverse((child) => {
+            if (child.isMesh && child.geometry && child.geometry.attributes.position) {
+              vertexCount += child.geometry.attributes.position.count;
+            }
+          });
+          return vertexCount;
         }
       }
 
