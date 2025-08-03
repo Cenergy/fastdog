@@ -199,6 +199,7 @@
 
       .method-selector {
         display: flex;
+        flex-wrap: wrap;
         gap: 5px;
         margin-bottom: 10px;
       }
@@ -263,6 +264,13 @@
 
         <!-- 传输方式选择 -->
         <div class="section">
+          <div class="section-title">📡 传统方式</div>
+          <div class="form-group">
+            <button id="originLoadBtn">直接加载</button>
+          </div>
+        </div>
+
+         <div class="section">
           <div class="section-title">🔄 传输方式</div>
           <div class="method-selector">
             <button class="method-btn" data-method="blob">Blob</button>
@@ -274,9 +282,6 @@
           <div class="form-group">
             <button id="loadBtn">🚀 加载模型</button>
             <button id="infoBtn">📋 获取信息</button>
-          </div>
-          <div class="form-group">
-            <button id="originLoadBtn">直接加载</button>
           </div>
         </div>
 
