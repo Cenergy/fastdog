@@ -193,13 +193,23 @@ cache_stats = {
 
 @lru_cache(maxsize=50)
 def cached_convert_gltf_to_binary(file_path: str, cache_key: str) -> bytes:
-    """带缓存的GLTF到二进制转换函数"""
+    """带缓存的模型文件到二进制转换函数"""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            gltf_data = json.load(f)
-        return convert_gltf_to_binary(gltf_data)
+        # 获取文件扩展名
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        # 读取文件数据
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        
+        # 导入转换函数
+        from .admin import convert_model_to_binary
+        
+        # 使用admin中的转换函数处理不同格式
+        return convert_model_to_binary(file_data, file_ext)
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load or convert GLTF file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load or convert model file: {str(e)}")
 
 
 def convert_gltf_to_binary(gltf_data: dict) -> bytes:
@@ -376,12 +386,18 @@ async def get_model_blob(filename: str, current_user: User = Depends(get_current
         raise HTTPException(status_code=404, detail="Model file not found")
     
     try:
-        # 读取并转换GLTF文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            gltf_data = json.load(f)
+        # 获取文件扩展名
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        # 读取文件数据
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        
+        # 导入转换函数
+        from .admin import convert_model_to_binary
         
         # 转换为二进制格式
-        binary_data = convert_gltf_to_binary(gltf_data)
+        binary_data = convert_model_to_binary(file_data, file_ext)
         
         headers = {
             "Content-Type": "application/octet-stream",

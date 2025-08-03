@@ -39,25 +39,25 @@ class FastDogJSDecoder {
                 throw new Error('数据太短，不是有效的 FastDog 格式');
             }
             
-            // 检查魔数 "FDOG"
-            const magic = new TextDecoder().decode(uint8Data.slice(0, 4));
-            if (magic !== 'FDOG') {
-                throw new Error(`无效的魔数: ${magic}，期望: FDOG`);
+            // 检查魔数 "FASTDOG1" (8字节)
+            const magic = new TextDecoder().decode(uint8Data.slice(0, 8));
+            if (magic !== 'FASTDOG1') {
+                throw new Error(`无效的魔数: ${magic}，期望: FASTDOG1`);
             }
             
             // 读取版本号
-            const version = new DataView(uint8Data.buffer, uint8Data.byteOffset + 4, 4).getUint32(0, true);
+            const version = new DataView(uint8Data.buffer, uint8Data.byteOffset + 8, 4).getUint32(0, true);
             
             // 读取压缩数据长度
-            const compressedSize = new DataView(uint8Data.buffer, uint8Data.byteOffset + 8, 4).getUint32(0, true);
+            const compressedSize = new DataView(uint8Data.buffer, uint8Data.byteOffset + 12, 4).getUint32(0, true);
             
             // 读取原始数据长度
-            const originalSize = new DataView(uint8Data.buffer, uint8Data.byteOffset + 12, 4).getUint32(0, true);
+            const originalSize = new DataView(uint8Data.buffer, uint8Data.byteOffset + 16, 4).getUint32(0, true);
             
             console.log(`📊 格式信息: 版本=${version}, 压缩=${compressedSize}字节, 原始=${originalSize}字节`);
             
             // 提取压缩数据
-            const compressedData = uint8Data.slice(16, 16 + compressedSize);
+            const compressedData = uint8Data.slice(20, 20 + compressedSize);
             
             // 使用 pako 解压缩（需要引入 pako 库）
             let decompressedData;
@@ -138,13 +138,13 @@ class FastDogJSDecoder {
         try {
             const uint8Data = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
             
-            if (uint8Data.length < 16) {
+            if (uint8Data.length < 20) {
                 return false;
             }
             
             // 检查魔数
-            const magic = new TextDecoder().decode(uint8Data.slice(0, 4));
-            return magic === 'FDOG';
+            const magic = new TextDecoder().decode(uint8Data.slice(0, 8));
+            return magic === 'FASTDOG1';
         } catch (error) {
             return false;
         }

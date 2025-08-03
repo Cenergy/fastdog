@@ -96,7 +96,7 @@ fn decode_binary_internal(data: &[u8], start_time: f64) -> Result<DecodeResult, 
     ]);
     cursor += 4;
     
-    if version != 1 {
+    if version != 1 && version != 2 {
         return Err(format!("不支持的版本: {}", version));
     }
     
@@ -138,26 +138,37 @@ fn decode_binary_internal(data: &[u8], start_time: f64) -> Result<DecodeResult, 
                 ));
             }
             
-            // 转换为 UTF-8 字符串
-            match String::from_utf8(decompressed) {
-                Ok(json_str) => {
-                    let decode_time = js_sys::Date::now() - start_time;
-                    
-                    Ok(DecodeResult {
-                        success: true,
-                        data: Some(json_str),
-                        error: None,
-                        stats: DecodeStats {
-                            original_size: original_len,
-                            compressed_size: compressed_len as u32,
-                            decode_time_ms: decode_time,
-                            compression_ratio: compressed_len as f32 / original_len as f32,
-                            format_version: version,
-                        },
-                    })
+            let decode_time = js_sys::Date::now() - start_time;
+            
+            // 根据版本处理数据
+            let data_result = if version == 1 {
+                // 版本1: JSON格式，转换为UTF-8字符串
+                match String::from_utf8(decompressed) {
+                    Ok(json_str) => json_str,
+                    Err(e) => return Err(format!("UTF-8 解码失败: {}", e)),
                 }
-                Err(e) => Err(format!("UTF-8 解码失败: {}", e)),
-            }
+            } else if version == 2 {
+                // 版本2: GLB二进制格式，返回base64编码
+                use js_sys::Uint8Array;
+                let uint8_array = Uint8Array::from(&decompressed[..]);
+                let base64_str = js_sys::btoa(&uint8_array.buffer().into()).unwrap();
+                format!("{{\"type\":\"glb\",\"data\":\"{}\"}}", base64_str)
+            } else {
+                return Err(format!("不支持的版本: {}", version));
+            };
+            
+            Ok(DecodeResult {
+                success: true,
+                data: Some(data_result),
+                error: None,
+                stats: DecodeStats {
+                    original_size: original_len,
+                    compressed_size: compressed_len as u32,
+                    decode_time_ms: decode_time,
+                    compression_ratio: compressed_len as f32 / original_len as f32,
+                    format_version: version,
+                },
+            })
         }
         Err(e) => Err(format!("解压缩失败: {}", e)),
     }
@@ -178,7 +189,7 @@ pub fn validate_fastdog_format(data: &[u8]) -> bool {
     
     // 检查版本
     let version = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
-    version == 1
+    version == 1 || version == 2
 }
 
 // 获取格式信息的函数

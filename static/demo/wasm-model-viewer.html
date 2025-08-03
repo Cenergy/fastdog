@@ -256,6 +256,7 @@
             <label for="modelSelect">选择模型:</label>
             <select id="modelSelect">
               <option value="merge.gltf">merge.gltf</option>
+              <option value="Bee.glb">Bee.glb</option>
             </select>
           </div>
         </div>
@@ -628,12 +629,12 @@
               headers['Authorization'] = `Bearer ${this.authToken}`;
             }
 
-            // const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
-            //   headers
-            // });
-            const response = await fetch(`/api/v1/resources/models/uuid/643fde5910e04622b5581909c276cbf1`, {
+            const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
               headers
             });
+            // const response = await fetch(`/api/v1/resources/models/uuid/643fde5910e04622b5581909c276cbf1`, {
+            //   headers
+            // });
 
             if (!response.ok) {
               throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -645,7 +646,7 @@
             const binaryData = await response.arrayBuffer();
             const downloadTime = performance.now() - startTime;
 
-            this.updateProgress(50, 'WASM: 使用 WASM 解码中...');
+           this.updateProgress(50, 'WASM: 使用 WASM 解码中...');
 
             // 使用 WASM 解码
             const decodeStartTime = performance.now();
@@ -998,6 +999,76 @@
             console.log('⚠️ 回退到示例几何体');
             return new THREE.BoxGeometry(2, 2, 2);
           }
+        }
+
+        async loadGLBFromBase64(base64Data) {
+          return new Promise((resolve, reject) => {
+            try {
+              // 将base64数据转换为ArrayBuffer
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              
+              // 创建Blob URL
+              const blob = new Blob([bytes], { type: 'application/octet-stream' });
+              const url = URL.createObjectURL(blob);
+              
+              const loader = new GLTFLoader();
+              loader.load(
+                url,
+                (gltf) => {
+                  // 清理Blob URL
+                  URL.revokeObjectURL(url);
+                  
+                  const geometry = gltf.scene.children[0]?.geometry || new THREE.BoxGeometry();
+                  resolve(geometry);
+                },
+                undefined,
+                (error) => {
+                  URL.revokeObjectURL(url);
+                  reject(error);
+                }
+              );
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+
+        async loadGLBFromArrayBuffer(arrayBuffer) {
+          return new Promise((resolve, reject) => {
+            try {
+              console.log('🔧 加载GLB ArrayBuffer数据，大小:', arrayBuffer.byteLength);
+              
+              // 直接从ArrayBuffer创建Blob URL，使用正确的GLB MIME类型
+              const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+              const url = URL.createObjectURL(blob);
+              
+              const loader = new GLTFLoader();
+              loader.load(
+                url,
+                (gltf) => {
+                  // 清理Blob URL
+                  URL.revokeObjectURL(url);
+                  console.log('✅ GLB模型加载成功');
+                  
+                  const geometry = gltf.scene.children[0]?.geometry || new THREE.BoxGeometry();
+                  resolve(geometry);
+                },
+                undefined,
+                (error) => {
+                  URL.revokeObjectURL(url);
+                  console.error('❌ GLB模型加载失败:', error);
+                  reject(error);
+                }
+              );
+            } catch (error) {
+              console.error('❌ 创建GLB Blob失败:', error);
+              reject(error);
+            }
+          });
         }
 
         async loadOriginalGLTF(filename) {

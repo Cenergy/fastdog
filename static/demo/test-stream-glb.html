@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream模式GLB测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .log {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Stream模式GLB解码测试</h1>
+        <p>此页面专门测试Stream模式下GLB文件的解码问题</p>
+        
+        <div class="test-section info">
+            <h3>📋 测试配置</h3>
+            <p><strong>测试文件:</strong> Bee.glb</p>
+            <p><strong>加载模式:</strong> Stream</p>
+            <p><strong>解码器:</strong> FastDogDecoder (WASM + JS fallback)</p>
+        </div>
+
+        <div class="test-section">
+            <h3>🚀 测试控制</h3>
+            <button onclick="testStreamMode()">测试Stream模式加载</button>
+            <button onclick="testBlobMode()">测试Blob模式加载</button>
+            <button onclick="clearLog()">清除日志</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 测试结果</h3>
+            <div id="results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 详细日志</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <!-- 加载必要的库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="/static/js/wasm-decoder.js"></script>
+    <script src="/static/js/model-loader.js"></script>
+
+    <script>
+        let modelLoader = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEntry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function showResult(title, content, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-section ${type}`;
+            resultDiv.innerHTML = `<h4>${title}</h4><pre>${content}</pre>`;
+            resultsDiv.appendChild(resultDiv);
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        async function initModelLoader() {
+            if (!modelLoader) {
+                log('🔧 初始化模型加载器...');
+                modelLoader = new WASMModelLoader('/api/v1/resources');
+                await modelLoader.initWASM();
+                log('✅ 模型加载器初始化完成');
+            }
+            return modelLoader;
+        }
+        
+        async function testStreamMode() {
+            log('🌊 开始Stream模式测试...');
+            
+            try {
+                const loader = await initModelLoader();
+                
+                log('📥 开始Stream模式加载Bee.glb...');
+                const startTime = performance.now();
+                
+                const result = await loader.loadModelStream('Bee.glb');
+                
+                const endTime = performance.now();
+                const totalTime = endTime - startTime;
+                
+                log(`✅ Stream模式加载成功！耗时: ${totalTime.toFixed(2)}ms`, 'success');
+                log(`📊 几何体信息: ${result.geometry.constructor.name}`);
+                log(`📊 数据大小: ${result.size} 字节`);
+                
+                if (result.performanceStats) {
+                    log(`📊 性能统计:`);
+                    Object.entries(result.performanceStats).forEach(([key, value]) => {
+                        log(`   ${key}: ${value}`);
+                    });
+                }
+                
+                showResult('Stream模式测试', `
+✅ 加载成功
+几何体类型: ${result.geometry.constructor.name}
+数据大小: ${result.size} 字节
+总耗时: ${totalTime.toFixed(2)}ms
+性能统计: ${JSON.stringify(result.performanceStats, null, 2)}
+                `, 'success');
+                
+            } catch (error) {
+                log(`❌ Stream模式测试失败: ${error.message}`, 'error');
+                log(`❌ 错误堆栈: ${error.stack}`, 'error');
+                
+                showResult('Stream模式测试', `❌ 失败: ${error.message}\n\n错误堆栈:\n${error.stack}`, 'error');
+            }
+        }
+        
+        async function testBlobMode() {
+            log('💾 开始Blob模式测试...');
+            
+            try {
+                const loader = await initModelLoader();
+                
+                log('📥 开始Blob模式加载Bee.glb...');
+                const startTime = performance.now();
+                
+                const result = await loader.loadModelBlob('Bee.glb');
+                
+                const endTime = performance.now();
+                const totalTime = endTime - startTime;
+                
+                log(`✅ Blob模式加载成功！耗时: ${totalTime.toFixed(2)}ms`, 'success');
+                log(`📊 几何体信息: ${result.geometry.constructor.name}`);
+                
+                if (result.performanceStats) {
+                    log(`📊 性能统计:`);
+                    Object.entries(result.performanceStats).forEach(([key, value]) => {
+                        log(`   ${key}: ${value}`);
+                    });
+                }
+                
+                showResult('Blob模式测试', `
+✅ 加载成功
+几何体类型: ${result.geometry.constructor.name}
+总耗时: ${totalTime.toFixed(2)}ms
+性能统计: ${JSON.stringify(result.performanceStats, null, 2)}
+                `, 'success');
+                
+            } catch (error) {
+                log(`❌ Blob模式测试失败: ${error.message}`, 'error');
+                log(`❌ 错误堆栈: ${error.stack}`, 'error');
+                
+                showResult('Blob模式测试', `❌ 失败: ${error.message}\n\n错误堆栈:\n${error.stack}`, 'error');
+            }
+        }
+        
+        // 页面加载时的初始化
+        window.addEventListener('load', () => {
+            log('🚀 页面加载完成，准备开始测试');
+            log('💡 点击按钮开始测试Stream模式或Blob模式');
+        });
+        
+        // 捕获全局错误
+        window.addEventListener('error', (event) => {
+            log(`❌ 全局错误: ${event.error.message}`, 'error');
+            log(`❌ 错误位置: ${event.filename}:${event.lineno}:${event.colno}`, 'error');
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            log(`❌ 未处理的Promise拒绝: ${event.reason}`, 'error');
+        });
+    </script>
+</body>
+</html>
