@@ -200,9 +200,9 @@ class WASMModelLoader {
             const decodedData = await this.decodeBinaryData(arrayBuffer);
             const decodeTime = performance.now() - decodeStart;
             
-            // 转换为Three.js几何体
+            // 转换为完整的Three.js模型（包含材质）
             const convertStart = performance.now();
-            const geometry = await this.convertToThreeGeometry(decodedData);
+            const modelResult = await this.convertToThreeModel(decodedData);
             const convertTime = performance.now() - convertStart;
             
             const totalTime = performance.now() - startTime;
@@ -210,15 +210,16 @@ class WASMModelLoader {
             console.log(`   网络请求: ${fetchTime.toFixed(2)}ms`);
             console.log(`   数据下载: ${downloadTime.toFixed(2)}ms`);
             console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
-            console.log(`   几何转换: ${convertTime.toFixed(2)}ms`);
+            console.log(`   模型转换: ${convertTime.toFixed(2)}ms`);
             console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
             
             return {
-                geometry,
+                model: modelResult.model,
+                geometry: modelResult.geometry, // 保持向后兼容
+                format: format || 'blob',
                 originalSize: parseInt(originalSize),
                 compressedSize: parseInt(compressedSize),
                 compressionRatio: parseFloat(compressionRatio),
-                format,
                 performanceStats: {
                     fetchTime: fetchTime.toFixed(2),
                     downloadTime: downloadTime.toFixed(2),
@@ -295,9 +296,9 @@ class WASMModelLoader {
             const decodedData = await this.decodeBinaryData(arrayBuffer);
             const decodeTime = performance.now() - decodeStart;
             
-            // 转换为Three.js几何体
+            // 转换为完整的Three.js模型（包含材质）
             const convertStart = performance.now();
-            const geometry = await this.convertToThreeGeometry(decodedData);
+            const modelResult = await this.convertToThreeModel(decodedData);
             const convertTime = performance.now() - convertStart;
             
             const totalTime = performance.now() - startTime;
@@ -306,11 +307,13 @@ class WASMModelLoader {
             console.log(`   流式下载: ${streamTime.toFixed(2)}ms`);
             console.log(`   数据合并: ${mergeTime.toFixed(2)}ms`);
             console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
-            console.log(`   几何转换: ${convertTime.toFixed(2)}ms`);
+            console.log(`   模型转换: ${convertTime.toFixed(2)}ms`);
             console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
             
             return { 
-                geometry, 
+                model: modelResult.model,
+                geometry: modelResult.geometry, // 保持向后兼容
+                format: 'stream',
                 size: receivedLength,
                 performanceStats: {
                     fetchTime: fetchTime.toFixed(2),
@@ -427,6 +430,36 @@ class WASMModelLoader {
     }
 
     /**
+     * 转换为完整的Three.js模型（包含材质）
+     */
+    async convertToThreeModel(gltfData) {
+        try {
+            // 检查是否有GLTFLoader可用
+            if (typeof window !== 'undefined' && window.GLTFLoader) {
+                return await this.loadCompleteModelWithGLTFLoader(gltfData);
+            }
+            
+            // 降级到完整的GLTF解析
+            const geometry = this.parseGLTFData(gltfData);
+            const material = new window.THREE.MeshStandardMaterial({
+                color: 0x667eea,
+                metalness: 0.3,
+                roughness: 0.4,
+            });
+            const model = new window.THREE.Mesh(geometry, material);
+            
+            return {
+                model: model,
+                geometry: geometry
+            };
+            
+        } catch (error) {
+            console.error('转换Three.js模型失败:', error);
+            throw error;
+        }
+    }
+
+    /**
      * 使用GLTFLoader加载GLTF数据
      */
     async loadWithGLTFLoader(gltfData) {
@@ -462,6 +495,59 @@ class WASMModelLoader {
                     undefined,
                     (error) => {
                         URL.revokeObjectURL(gltfUrl);
+                        reject(error);
+                    }
+                );
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    /**
+     * 使用GLTFLoader加载完整模型（包含材质）
+     */
+    async loadCompleteModelWithGLTFLoader(gltfData) {
+        return new Promise((resolve, reject) => {
+            try {
+                console.log('🎨 使用GLTFLoader加载完整模型（包含材质）');
+                
+                // 将GLTF数据转换为Blob URL
+                const gltfBlob = new Blob([JSON.stringify(gltfData)], { type: 'application/json' });
+                const gltfUrl = URL.createObjectURL(gltfBlob);
+                
+                const loader = new window.GLTFLoader();
+                loader.load(
+                    gltfUrl,
+                    (gltf) => {
+                        // 清理Blob URL
+                        URL.revokeObjectURL(gltfUrl);
+                        
+                        console.log('✅ GLTFLoader加载成功，保留完整材质');
+                        
+                        // 提取第一个几何体用于向后兼容
+                        let geometry = null;
+                        gltf.scene.traverse((child) => {
+                            if (child.isMesh && child.geometry && !geometry) {
+                                geometry = child.geometry;
+                            }
+                        });
+                        
+                        if (!geometry) {
+                            // 如果没有找到几何体，创建一个默认的
+                            geometry = new window.THREE.BoxGeometry(1, 1, 1);
+                        }
+                        
+                        // 返回完整的模型和几何体
+                        resolve({
+                            model: gltf.scene,
+                            geometry: geometry
+                        });
+                    },
+                    undefined,
+                    (error) => {
+                        URL.revokeObjectURL(gltfUrl);
+                        console.error('❌ GLTFLoader加载失败:', error);
                         reject(error);
                     }
                 );
