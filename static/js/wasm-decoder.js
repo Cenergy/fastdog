@@ -149,6 +149,120 @@ class FastDogDecoder {
     }
 
     /**
+     * 零拷贝解码数据（直接返回二进制数据）
+     * @param {ArrayBuffer} data - 要解码的数据
+     * @returns {Promise<{data: Uint8Array, stats: Object}>} 解码后的二进制数据和统计信息
+     */
+    async decodeBinary(data) {
+        if (this.usingJSFallback) {
+            // JavaScript备选方案
+            const result = await this.decode(data);
+            if (result.data && result.data.type === 'glb') {
+                // 将base64数据转换回二进制
+                const binaryData = this._base64ToUint8Array(result.data.data);
+                return {
+                    data: binaryData,
+                    stats: result.stats
+                };
+            }
+            throw new Error('JavaScript解码器不支持二进制输出');
+        } else {
+            if (!this.wasmModule || !this.wasmModule.decode_fastdog_to_binary) {
+                throw new Error('WASM解码器未初始化或decode_fastdog_to_binary方法不可用');
+            }
+            
+            // 确保数据是Uint8Array格式
+            const uint8Data = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+            
+            // 调用WASM二进制解码函数
+            const startTime = performance.now();
+            const binaryResult = this.wasmModule.decode_fastdog_to_binary(uint8Data);
+            const endTime = performance.now();
+            
+            // 获取统计信息
+            const statsResult = this.wasmModule.get_decode_stats(uint8Data);
+            
+            console.log('🚀 WASM二进制解码完成，数据长度:', binaryResult.length);
+            
+            return {
+                data: binaryResult,
+                stats: {
+                    originalSize: statsResult.original_size,
+                    compressedSize: statsResult.compressed_size,
+                    compressionRatio: statsResult.compression_ratio,
+                    decodeTimeMs: statsResult.decode_time_ms,
+                    formatVersion: statsResult.format_version,
+                    wasmDecodeTime: statsResult.decode_time_ms,
+                    jsWrapperTime: endTime - startTime
+                }
+            };
+        }
+    }
+
+    /**
+     * 零拷贝解码（返回内存指针）
+     * @param {ArrayBuffer} data - 要解码的数据
+     * @returns {Promise<{dataView: Uint8Array, stats: Object}>} 内存视图和统计信息
+     */
+    async decodeZeroCopy(data) {
+        if (this.usingJSFallback) {
+            // JavaScript备选方案，实际上还是会拷贝
+            return await this.decodeBinary(data);
+        } else {
+            if (!this.wasmModule || !this.wasmModule.decode_fastdog_binary_zero_copy) {
+                throw new Error('WASM解码器未初始化或decode_fastdog_binary_zero_copy方法不可用');
+            }
+            
+            // 确保数据是Uint8Array格式
+            const uint8Data = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+            
+            // 调用WASM零拷贝解码函数
+            const startTime = performance.now();
+            const result = this.wasmModule.decode_fastdog_binary_zero_copy(uint8Data);
+            const endTime = performance.now();
+            
+            if (!result.success) {
+                throw new Error(`WASM零拷贝解码失败: ${result.error || '未知错误'}`);
+            }
+            
+            // 创建内存视图，直接访问WASM内存
+            const dataView = new Uint8Array(
+                this.wasmModule.memory.buffer,
+                result.data_ptr,
+                result.data_len
+            );
+            
+            console.log('⚡ WASM零拷贝解码完成，数据长度:', result.data_len);
+            
+            return {
+                dataView: dataView,
+                stats: {
+                    originalSize: result.stats.original_size,
+                    compressedSize: result.stats.compressed_size,
+                    compressionRatio: result.stats.compression_ratio,
+                    decodeTimeMs: result.stats.decode_time_ms,
+                    formatVersion: result.stats.format_version,
+                    wasmDecodeTime: result.stats.decode_time_ms,
+                    jsWrapperTime: endTime - startTime
+                }
+            };
+        }
+    }
+
+    /**
+     * Base64转Uint8Array的辅助函数
+     * @private
+     */
+    _base64ToUint8Array(base64) {
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    /**
      * 获取当前使用的解码器类型
      * @returns {string} 'wasm' 或 'javascript'
      */

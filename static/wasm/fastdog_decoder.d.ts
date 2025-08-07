@@ -2,6 +2,9 @@
 /* eslint-disable */
 export function init(): void;
 export function decode_fastdog_binary(data: Uint8Array): any;
+export function decode_fastdog_binary_zero_copy(data: Uint8Array): any;
+export function decode_fastdog_to_binary(data: Uint8Array): Uint8Array;
+export function get_decode_stats(data: Uint8Array): any;
 export function validate_fastdog_format(data: Uint8Array): boolean;
 export function get_format_info(data: Uint8Array): any;
 export function benchmark_decode(data: Uint8Array, iterations: number): any;
@@ -12,6 +15,9 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly init: () => void;
   readonly decode_fastdog_binary: (a: number, b: number) => any;
+  readonly decode_fastdog_binary_zero_copy: (a: number, b: number) => any;
+  readonly decode_fastdog_to_binary: (a: number, b: number) => [number, number];
+  readonly get_decode_stats: (a: number, b: number) => any;
   readonly validate_fastdog_format: (a: number, b: number) => number;
   readonly get_format_info: (a: number, b: number) => any;
   readonly benchmark_decode: (a: number, b: number, c: number) => any;

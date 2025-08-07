@@ -25,10 +25,14 @@ web-sys = { version = "0.3", features = [
 console_error_panic_hook = { version = "0.1", optional = true }
 
 [profile.release]
-opt-level = "s"
-lto = true
+opt-level = 3  # 优先性能而非大小
+lto = "fat"    # 更激进的链接时优化
 codegen-units = 1
 panic = "abort"
+overflow-checks = false  # 禁用溢出检查以提升性能
+
+[profile.release.package."*"]
+opt-level = 3
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-Oz", "--enable-mutable-globals"]
+wasm-opt = ["-O4", "--enable-simd", "--enable-bulk-memory", "--enable-mutable-globals"]

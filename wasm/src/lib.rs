@@ -102,6 +102,71 @@ pub fn decode_fastdog_binary(data: &[u8]) -> JsValue {
     }
 }
 
+// 零拷贝二进制解码结果结构
+#[derive(Serialize, Deserialize)]
+pub struct BinaryDecodeResult {
+    pub success: bool,
+    pub data_ptr: u32,
+    pub data_len: u32,
+    pub error: Option<String>,
+    pub stats: DecodeStats,
+}
+
+// 零拷贝二进制解码函数
+#[wasm_bindgen]
+pub fn decode_fastdog_binary_zero_copy(data: &[u8]) -> JsValue {
+    let start_time = js_sys::Date::now();
+    
+    match decode_binary_internal_zero_copy(data, start_time) {
+        Ok(result) => serde_wasm_bindgen::to_value(&result).unwrap(),
+        Err(error) => {
+            let error_result = BinaryDecodeResult {
+                success: false,
+                data_ptr: 0,
+                data_len: 0,
+                error: Some(error),
+                stats: DecodeStats {
+                    original_size: 0,
+                    compressed_size: data.len() as u32,
+                    decode_time_ms: js_sys::Date::now() - start_time,
+                    compression_ratio: 0.0,
+                    format_version: 0,
+                },
+            };
+            serde_wasm_bindgen::to_value(&error_result).unwrap()
+        }
+    }
+}
+
+// 直接返回二进制数据的解码函数
+#[wasm_bindgen]
+pub fn decode_fastdog_to_binary(data: &[u8]) -> Vec<u8> {
+    match decode_binary_raw(data) {
+        Ok(binary_data) => binary_data,
+        Err(_) => Vec::new(), // 错误时返回空向量
+    }
+}
+
+// 获取解码统计信息的单独函数
+#[wasm_bindgen]
+pub fn get_decode_stats(data: &[u8]) -> JsValue {
+    let start_time = js_sys::Date::now();
+    
+    match decode_binary_internal(data, start_time) {
+        Ok(result) => serde_wasm_bindgen::to_value(&result.stats).unwrap(),
+        Err(_) => {
+            let error_stats = DecodeStats {
+                original_size: 0,
+                compressed_size: data.len() as u32,
+                decode_time_ms: js_sys::Date::now() - start_time,
+                compression_ratio: 0.0,
+                format_version: 0,
+            };
+            serde_wasm_bindgen::to_value(&error_stats).unwrap()
+        }
+    }
+}
+
 // 内部解码实现
 fn decode_binary_internal(data: &[u8], start_time: f64) -> Result<DecodeResult, String> {
     if data.len() < 20 {
@@ -197,6 +262,135 @@ fn decode_binary_internal(data: &[u8], start_time: f64) -> Result<DecodeResult, 
         }
         Err(e) => Err(format!("解压缩失败: {}", e)),
     }
+}
+
+// 零拷贝解码内部实现
+fn decode_binary_internal_zero_copy(data: &[u8], start_time: f64) -> Result<BinaryDecodeResult, String> {
+    let decompressed = decode_binary_raw(data)?;
+    let decode_time = js_sys::Date::now() - start_time;
+    
+    // 将数据存储在静态内存中，返回指针
+    let data_ptr = decompressed.as_ptr() as u32;
+    let data_len = decompressed.len() as u32;
+    
+    // 防止数据被释放，使用Box::leak
+    let leaked_data = Box::leak(decompressed.into_boxed_slice());
+    
+    // 获取格式信息
+    let (original_len, compressed_len, version) = get_format_metadata(data)?;
+    
+    Ok(BinaryDecodeResult {
+        success: true,
+        data_ptr,
+        data_len,
+        error: None,
+        stats: DecodeStats {
+            original_size: original_len,
+            compressed_size: compressed_len,
+            decode_time_ms: decode_time,
+            compression_ratio: compressed_len as f32 / original_len as f32,
+            format_version: version,
+        },
+    })
+}
+
+// 原始二进制解码函数
+fn decode_binary_raw(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() < 20 {
+        return Err("数据太短，不是有效的 FastDog 格式".to_string());
+    }
+    
+    let mut cursor = 0;
+    
+    // 1. 验证魔数 (8字节)
+    let magic = &data[cursor..cursor + 8];
+    if magic != b"FASTDOG1" {
+        return Err(format!("无效的魔数: {:?}", magic));
+    }
+    cursor += 8;
+    
+    // 2. 读取版本号 (4字节)
+    let version = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]);
+    cursor += 4;
+    
+    if version != 1 && version != 2 {
+        return Err(format!("不支持的版本: {}", version));
+    }
+    
+    // 3. 读取压缩数据长度 (4字节)
+    let compressed_len = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]) as usize;
+    cursor += 4;
+    
+    // 4. 读取压缩数据
+    if cursor + compressed_len > data.len() {
+        return Err("压缩数据长度超出范围".to_string());
+    }
+    
+    let compressed_data = &data[cursor..cursor + compressed_len];
+    cursor += compressed_len;
+    
+    // 5. 读取原始数据长度 (4字节) - 用于验证
+    if cursor + 4 > data.len() {
+        return Err("缺少原始数据长度字段".to_string());
+    }
+    
+    let original_len = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]);
+    
+    // 6. 解压缩数据
+    let mut decoder = ZlibDecoder::new(compressed_data);
+    let mut decompressed = Vec::with_capacity(original_len as usize);
+    
+    match decoder.read_to_end(&mut decompressed) {
+        Ok(_) => {
+            // 验证解压后的数据长度
+            if decompressed.len() != original_len as usize {
+                return Err(format!(
+                    "解压后数据长度不匹配: 期望 {}, 实际 {}",
+                    original_len,
+                    decompressed.len()
+                ));
+            }
+            
+            Ok(decompressed)
+        }
+        Err(e) => Err(format!("解压缩失败: {}", e)),
+    }
+}
+
+// 获取格式元数据
+fn get_format_metadata(data: &[u8]) -> Result<(u32, u32, u32), String> {
+    if data.len() < 20 {
+        return Err("数据太短".to_string());
+    }
+    
+    let mut cursor = 8; // 跳过魔数
+    
+    // 读取版本号
+    let version = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]);
+    cursor += 4;
+    
+    // 读取压缩数据长度
+    let compressed_len = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]);
+    cursor += 4;
+    
+    cursor += compressed_len as usize; // 跳过压缩数据
+    
+    // 读取原始数据长度
+    let original_len = u32::from_le_bytes([
+        data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]
+    ]);
+    
+    Ok((original_len, compressed_len, version))
 }
 
 // 验证二进制格式的函数

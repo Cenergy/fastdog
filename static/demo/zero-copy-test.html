@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastDog 零拷贝优化测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 25px;
+            border: 2px solid #e74c3c;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #fff5f5, #ffeaea);
+        }
+        
+        .test-section h2 {
+            color: #e74c3c;
+            margin-top: 0;
+            font-size: 1.5em;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(45deg, #27ae60, #229954);
+            color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+            color: white;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 5px solid #3498db;
+        }
+        
+        .performance-comparison {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .perf-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-top: 4px solid #3498db;
+        }
+        
+        .perf-card h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #27ae60;
+        }
+        
+        .improvement {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .log {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FastDog 零拷贝优化测试</h1>
+        
+        <div class="test-section">
+            <h2>📊 性能对比测试</h2>
+            <p>测试不同解码方式的性能差异：传统解码 vs 二进制返回 vs 零拷贝</p>
+            
+            <div class="controls">
+                <button id="loadTestData" class="btn-primary">📁 加载测试数据</button>
+                <button id="testTraditional" class="btn-success" disabled>🔄 传统解码测试</button>
+                <button id="testBinary" class="btn-warning" disabled>⚡ 二进制返回测试</button>
+                <button id="testZeroCopy" class="btn-warning" disabled>🚀 零拷贝测试</button>
+                <button id="runBenchmark" class="btn-primary" disabled>🏁 运行基准测试</button>
+            </div>
+            
+            <div id="status" class="status loading" style="display: none;">正在初始化...</div>
+            
+            <div class="performance-comparison">
+                <div class="perf-card">
+                    <h3>🔄 传统解码</h3>
+                    <div id="traditionalResults">
+                        <div class="metric">
+                            <span>解码时间:</span>
+                            <span class="metric-value" id="traditionalTime">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>内存使用:</span>
+                            <span class="metric-value" id="traditionalMemory">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>数据大小:</span>
+                            <span class="metric-value" id="traditionalSize">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="perf-card">
+                    <h3>⚡ 二进制返回</h3>
+                    <div id="binaryResults">
+                        <div class="metric">
+                            <span>解码时间:</span>
+                            <span class="metric-value" id="binaryTime">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>内存使用:</span>
+                            <span class="metric-value" id="binaryMemory">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>数据大小:</span>
+                            <span class="metric-value" id="binarySize">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>性能提升:</span>
+                            <span class="improvement" id="binaryImprovement">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="perf-card">
+                    <h3>🚀 零拷贝</h3>
+                    <div id="zeroCopyResults">
+                        <div class="metric">
+                            <span>解码时间:</span>
+                            <span class="metric-value" id="zeroCopyTime">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>内存使用:</span>
+                            <span class="metric-value" id="zeroCopyMemory">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>数据大小:</span>
+                            <span class="metric-value" id="zeroCopySize">-</span>
+                        </div>
+                        <div class="metric">
+                            <span>性能提升:</span>
+                            <span class="improvement" id="zeroCopyImprovement">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="log" class="log" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/wasm-decoder.js"></script>
+    <script>
+        let decoder = null;
+        let testData = null;
+        let performanceResults = {
+            traditional: null,
+            binary: null,
+            zeroCopy: null
+        };
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            logElement.textContent += logEntry;
+            logElement.style.display = 'block';
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        // 更新状态
+        function updateStatus(message, type = 'loading') {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.className = `status ${type}`;
+            statusElement.style.display = 'block';
+        }
+
+        // 格式化字节大小
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 格式化时间
+        function formatTime(ms) {
+            if (ms < 1) return (ms * 1000).toFixed(2) + ' μs';
+            if (ms < 1000) return ms.toFixed(2) + ' ms';
+            return (ms / 1000).toFixed(2) + ' s';
+        }
+
+        // 计算性能提升
+        function calculateImprovement(baseline, optimized) {
+            if (!baseline || !optimized) return '-';
+            const improvement = ((baseline - optimized) / baseline * 100).toFixed(1);
+            return improvement > 0 ? `+${improvement}%` : `${improvement}%`;
+        }
+
+        // 更新性能结果显示
+        function updatePerformanceDisplay() {
+            const { traditional, binary, zeroCopy } = performanceResults;
+            
+            if (traditional) {
+                document.getElementById('traditionalTime').textContent = formatTime(traditional.decodeTime);
+                document.getElementById('traditionalMemory').textContent = formatBytes(traditional.memoryUsed);
+                document.getElementById('traditionalSize').textContent = formatBytes(traditional.dataSize);
+            }
+            
+            if (binary) {
+                document.getElementById('binaryTime').textContent = formatTime(binary.decodeTime);
+                document.getElementById('binaryMemory').textContent = formatBytes(binary.memoryUsed);
+                document.getElementById('binarySize').textContent = formatBytes(binary.dataSize);
+                document.getElementById('binaryImprovement').textContent = 
+                    calculateImprovement(traditional?.decodeTime, binary.decodeTime);
+            }
+            
+            if (zeroCopy) {
+                document.getElementById('zeroCopyTime').textContent = formatTime(zeroCopy.decodeTime);
+                document.getElementById('zeroCopyMemory').textContent = formatBytes(zeroCopy.memoryUsed);
+                document.getElementById('zeroCopySize').textContent = formatBytes(zeroCopy.dataSize);
+                document.getElementById('zeroCopyImprovement').textContent = 
+                    calculateImprovement(traditional?.decodeTime, zeroCopy.decodeTime);
+            }
+        }
+
+        // 测量内存使用
+        function measureMemory() {
+            if (performance.memory) {
+                return performance.memory.usedJSHeapSize;
+            }
+            return 0;
+        }
+
+        // 初始化解码器
+        async function initDecoder() {
+            try {
+                updateStatus('正在初始化 WASM 解码器...', 'loading');
+                log('🚀 开始初始化 FastDog 解码器');
+                
+                decoder = new FastDogDecoder();
+                await decoder.init();
+                
+                const decoderType = decoder.getDecoderType();
+                log(`✅ 解码器初始化成功，使用: ${decoderType}`);
+                updateStatus(`解码器已就绪 (${decoderType})`, 'success');
+                
+                document.getElementById('loadTestData').disabled = false;
+                
+            } catch (error) {
+                log(`❌ 解码器初始化失败: ${error.message}`);
+                updateStatus('解码器初始化失败', 'error');
+            }
+        }
+
+        // 加载测试数据
+        async function loadTestData() {
+            try {
+                updateStatus('正在加载测试数据...', 'loading');
+                log('📁 开始加载测试数据');
+                
+                // 这里应该加载实际的 FastDog 格式文件
+                // 为了演示，我们创建一个模拟的测试数据
+                const response = await fetch('/static/models/Bee.glb');
+                if (!response.ok) {
+                    throw new Error('无法加载测试文件');
+                }
+                
+                testData = await response.arrayBuffer();
+                log(`✅ 测试数据加载成功，大小: ${formatBytes(testData.byteLength)}`);
+                updateStatus('测试数据已加载', 'success');
+                
+                // 启用测试按钮
+                document.getElementById('testTraditional').disabled = false;
+                document.getElementById('testBinary').disabled = false;
+                document.getElementById('testZeroCopy').disabled = false;
+                document.getElementById('runBenchmark').disabled = false;
+                
+            } catch (error) {
+                log(`❌ 加载测试数据失败: ${error.message}`);
+                updateStatus('测试数据加载失败', 'error');
+            }
+        }
+
+        // 传统解码测试
+        async function testTraditional() {
+            if (!testData) return;
+            
+            try {
+                log('🔄 开始传统解码测试');
+                const memoryBefore = measureMemory();
+                const startTime = performance.now();
+                
+                const result = await decoder.decode(testData);
+                
+                const endTime = performance.now();
+                const memoryAfter = measureMemory();
+                
+                performanceResults.traditional = {
+                    decodeTime: endTime - startTime,
+                    memoryUsed: memoryAfter - memoryBefore,
+                    dataSize: JSON.stringify(result.data).length
+                };
+                
+                log(`✅ 传统解码完成: ${formatTime(performanceResults.traditional.decodeTime)}`);
+                updatePerformanceDisplay();
+                
+            } catch (error) {
+                log(`❌ 传统解码失败: ${error.message}`);
+            }
+        }
+
+        // 二进制返回测试
+        async function testBinary() {
+            if (!testData || !decoder.decodeBinary) {
+                log('⚠️ 二进制解码方法不可用');
+                return;
+            }
+            
+            try {
+                log('⚡ 开始二进制返回测试');
+                const memoryBefore = measureMemory();
+                const startTime = performance.now();
+                
+                const result = await decoder.decodeBinary(testData);
+                
+                const endTime = performance.now();
+                const memoryAfter = measureMemory();
+                
+                performanceResults.binary = {
+                    decodeTime: endTime - startTime,
+                    memoryUsed: memoryAfter - memoryBefore,
+                    dataSize: result.data.byteLength
+                };
+                
+                log(`✅ 二进制解码完成: ${formatTime(performanceResults.binary.decodeTime)}`);
+                updatePerformanceDisplay();
+                
+            } catch (error) {
+                log(`❌ 二进制解码失败: ${error.message}`);
+            }
+        }
+
+        // 零拷贝测试
+        async function testZeroCopy() {
+            if (!testData || !decoder.decodeZeroCopy) {
+                log('⚠️ 零拷贝解码方法不可用');
+                return;
+            }
+            
+            try {
+                log('🚀 开始零拷贝测试');
+                const memoryBefore = measureMemory();
+                const startTime = performance.now();
+                
+                const result = await decoder.decodeZeroCopy(testData);
+                
+                const endTime = performance.now();
+                const memoryAfter = measureMemory();
+                
+                performanceResults.zeroCopy = {
+                    decodeTime: endTime - startTime,
+                    memoryUsed: memoryAfter - memoryBefore,
+                    dataSize: result.dataView.byteLength
+                };
+                
+                log(`✅ 零拷贝解码完成: ${formatTime(performanceResults.zeroCopy.decodeTime)}`);
+                updatePerformanceDisplay();
+                
+            } catch (error) {
+                log(`❌ 零拷贝解码失败: ${error.message}`);
+            }
+        }
+
+        // 运行基准测试
+        async function runBenchmark() {
+            if (!testData) return;
+            
+            log('🏁 开始运行完整基准测试');
+            updateStatus('正在运行基准测试...', 'loading');
+            
+            await testTraditional();
+            await new Promise(resolve => setTimeout(resolve, 100)); // 短暂延迟
+            
+            await testBinary();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            await testZeroCopy();
+            
+            log('🎉 基准测试完成！');
+            updateStatus('基准测试完成', 'success');
+            
+            // 输出总结
+            const { traditional, binary, zeroCopy } = performanceResults;
+            if (traditional && binary && zeroCopy) {
+                log('📊 性能对比总结:');
+                log(`   传统解码: ${formatTime(traditional.decodeTime)}`);
+                log(`   二进制返回: ${formatTime(binary.decodeTime)} (${calculateImprovement(traditional.decodeTime, binary.decodeTime)})`);
+                log(`   零拷贝: ${formatTime(zeroCopy.decodeTime)} (${calculateImprovement(traditional.decodeTime, zeroCopy.decodeTime)})`);
+            }
+        }
+
+        // 事件监听器
+        document.getElementById('loadTestData').addEventListener('click', loadTestData);
+        document.getElementById('testTraditional').addEventListener('click', testTraditional);
+        document.getElementById('testBinary').addEventListener('click', testBinary);
+        document.getElementById('testZeroCopy').addEventListener('click', testZeroCopy);
+        document.getElementById('runBenchmark').addEventListener('click', runBenchmark);
+
+        // 页面加载时初始化
+        window.addEventListener('load', initDecoder);
+    </script>
+</body>
+</html>
