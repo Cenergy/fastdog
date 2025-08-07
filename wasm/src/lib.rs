@@ -9,7 +9,12 @@ use serde_wasm_bindgen;
 // `set_panic_hook` 函数至少一次在初始化期间，然后我们将获得
 // 更好的错误消息，如果我们的代码发生 panic。
 #[cfg(feature = "console_error_panic_hook")]
-pub use console_error_panic_hook::set_panic_hook;
+extern crate console_error_panic_hook;
+
+#[cfg(feature = "console_error_panic_hook")]
+fn set_panic_hook() {
+    console_error_panic_hook::set_once();
+}
 
 // 使用 `wee_alloc` 作为全局分配器。
 #[cfg(feature = "wee_alloc")]
@@ -39,6 +44,28 @@ macro_rules! log {
     ( $( $t:tt )* ) => {
         console::log_1(&format!( $( $t )* ).into());
     }
+}
+
+// 简单的base64编码实现
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    
+    for chunk in data.chunks(3) {
+        let mut buf = [0u8; 3];
+        for (i, &byte) in chunk.iter().enumerate() {
+            buf[i] = byte;
+        }
+        
+        let b = ((buf[0] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[2] as u32);
+        
+        result.push(CHARS[((b >> 18) & 63) as usize] as char);
+        result.push(CHARS[((b >> 12) & 63) as usize] as char);
+        result.push(if chunk.len() > 1 { CHARS[((b >> 6) & 63) as usize] as char } else { '=' });
+        result.push(if chunk.len() > 2 { CHARS[(b & 63) as usize] as char } else { '=' });
+    }
+    
+    result
 }
 
 // 初始化函数
@@ -148,10 +175,8 @@ fn decode_binary_internal(data: &[u8], start_time: f64) -> Result<DecodeResult, 
                     Err(e) => return Err(format!("UTF-8 解码失败: {}", e)),
                 }
             } else if version == 2 {
-                // 版本2: GLB二进制格式，返回base64编码
-                use js_sys::Uint8Array;
-                let uint8_array = Uint8Array::from(&decompressed[..]);
-                let base64_str = js_sys::btoa(&uint8_array.buffer().into()).unwrap();
+                // 版本2: GLB二进制格式，使用简单的base64编码
+                let base64_str = base64_encode(&decompressed);
                 format!("{{\"type\":\"glb\",\"data\":\"{}\"}}", base64_str)
             } else {
                 return Err(format!("不支持的版本: {}", version));

@@ -15,9 +15,10 @@ export interface InitOutput {
   readonly validate_fastdog_format: (a: number, b: number) => number;
   readonly get_format_info: (a: number, b: number) => any;
   readonly benchmark_decode: (a: number, b: number, c: number) => any;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-  readonly __wbindgen_export_2: WebAssembly.Table;
+  readonly __wbindgen_export_3: WebAssembly.Table;
   readonly __wbindgen_start: () => void;
 }
 

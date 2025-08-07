@@ -277,7 +277,7 @@
             <button class="method-btn" data-method="stream">Stream</button>
             <button class="method-btn" data-method="gltf">GLTF</button>
             <button class="method-btn" data-method="enhanced">Enhanced</button>
-            <button class="method-btn active" data-method="wasm">🚀 WASM解码</button>
+            <button class="method-btn active" data-method="wasm">WASM解码</button>
           </div>
           <div class="form-group">
             <button id="loadBtn">🚀 加载模型</button>
@@ -594,16 +594,30 @@
             }
 
             // 添加新模型
-            const material = new THREE.MeshStandardMaterial({
-              color: 0x667eea,
-              metalness: 0.3,
-              roughness: 0.4,
-            });
-
-            this.currentModel = new THREE.Mesh(result.geometry, material);
-            this.currentModel.castShadow = true;
-            this.currentModel.receiveShadow = true;
-            this.scene.add(this.currentModel);
+            if (result.model) {
+              // 如果返回的是完整的模型对象（包含材质），直接使用
+              this.currentModel = result.model;
+              this.currentModel.traverse((child) => {
+                if (child.isMesh) {
+                  child.castShadow = true;
+                  child.receiveShadow = true;
+                }
+              });
+              this.scene.add(this.currentModel);
+            } else if (result.geometry) {
+              // 如果只有几何体，使用默认材质
+              const material = new THREE.MeshStandardMaterial({
+                color: 0x667eea,
+                metalness: 0.3,
+                roughness: 0.4,
+              });
+              this.currentModel = new THREE.Mesh(result.geometry, material);
+              this.currentModel.castShadow = true;
+              this.currentModel.receiveShadow = true;
+              this.scene.add(this.currentModel);
+            } else {
+              throw new Error('无效的模型数据');
+            }
 
             // 调整相机位置
             this.fitCameraToModel();
@@ -681,10 +695,10 @@
               }
             }
 
-            this.updateProgress(80, 'WASM: 解码完成，构建几何体...');
+            this.updateProgress(80, 'WASM: 解码完成，构建模型...');
 
-            // 从解码结果构建几何体
-            const geometry = this.buildGeometryFromGLTF(parsedData || decodeResult.data);
+            // 从解码结果构建完整模型（包含材质）
+            const modelResult = this.buildModelFromGLTF(parsedData || decodeResult.data);
             const totalTime = performance.now() - startTime;
 
             this.updateProgress(100, 'WASM: 加载完成!');
@@ -699,7 +713,8 @@
 
             // 返回结果和性能统计
             return {
-              geometry,
+              model: modelResult.model,
+              geometry: modelResult.geometry, // 保持向后兼容
               format: 'wasm',
               performanceStats: {
                 downloadTime: downloadTime.toFixed(2),
@@ -808,6 +823,360 @@
             originLoadBtn.disabled = false;
             loading.style.display = "none";
           }
+        }
+
+        buildModelFromGLTF(gltfData) {
+          console.log('🔧 开始构建完整模型（包含材质）');
+          
+          try {
+            // 尝试使用GLTFLoader直接加载
+            if (this.isCompleteGLTFData(gltfData)) {
+              return this.buildModelFromCompleteGLTF(gltfData);
+            }
+            
+            // 回退到几何体构建
+            const geometry = this.buildGeometryFromGLTF(gltfData);
+            
+            // 创建默认材质
+            const material = new THREE.MeshStandardMaterial({
+              color: 0x667eea,
+              metalness: 0.3,
+              roughness: 0.4,
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            return {
+              model: mesh,
+              geometry: geometry
+            };
+            
+          } catch (error) {
+            console.error('❌ 构建模型失败:', error);
+            const fallbackGeometry = new THREE.BoxGeometry(1, 1, 1);
+            const fallbackMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+            const fallbackMesh = new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+            
+            return {
+              model: fallbackMesh,
+              geometry: fallbackGeometry
+            };
+          }
+        }
+
+        isCompleteGLTFData(gltfData) {
+          return gltfData && 
+                 gltfData.scenes && 
+                 gltfData.nodes && 
+                 gltfData.meshes && 
+                 gltfData.accessors && 
+                 gltfData.bufferViews && 
+                 gltfData.buffers;
+        }
+
+        buildModelFromCompleteGLTF(gltfData) {
+          console.log('🎨 构建完整GLTF模型（包含材质）');
+          
+          try {
+            // 创建场景根节点
+            const scene = new THREE.Group();
+            
+            // 处理材质
+            const materials = this.buildMaterials(gltfData);
+            
+            // 处理网格
+            const meshes = this.buildMeshes(gltfData, materials);
+            
+            // 处理节点和场景
+            if (gltfData.scenes && gltfData.scenes.length > 0) {
+              const sceneData = gltfData.scenes[0];
+              if (sceneData.nodes) {
+                sceneData.nodes.forEach(nodeIndex => {
+                  const node = this.buildNode(gltfData, nodeIndex, meshes);
+                  if (node) {
+                    scene.add(node);
+                  }
+                });
+              }
+            }
+            
+            // 如果场景为空，添加第一个网格
+            if (scene.children.length === 0 && meshes.length > 0) {
+              scene.add(meshes[0]);
+            }
+            
+            console.log('✅ 完整GLTF模型构建成功');
+            
+            return {
+              model: scene,
+              geometry: meshes[0]?.geometry || new THREE.BoxGeometry(1, 1, 1)
+            };
+            
+          } catch (error) {
+            console.error('❌ 构建完整GLTF模型失败:', error);
+            throw error;
+          }
+        }
+
+        buildMaterials(gltfData) {
+          const materials = [];
+          
+          if (gltfData.materials) {
+            gltfData.materials.forEach((materialData, index) => {
+              console.log(`🎨 构建材质 ${index}:`, materialData);
+              
+              const material = new THREE.MeshStandardMaterial();
+              
+              // 基础颜色
+              if (materialData.pbrMetallicRoughness) {
+                const pbr = materialData.pbrMetallicRoughness;
+                
+                if (pbr.baseColorFactor) {
+                  material.color.setRGB(
+                    pbr.baseColorFactor[0],
+                    pbr.baseColorFactor[1],
+                    pbr.baseColorFactor[2]
+                  );
+                  if (pbr.baseColorFactor[3] < 1.0) {
+                    material.transparent = true;
+                    material.opacity = pbr.baseColorFactor[3];
+                  }
+                }
+                
+                // 金属度和粗糙度
+                if (pbr.metallicFactor !== undefined) {
+                  material.metalness = pbr.metallicFactor;
+                }
+                if (pbr.roughnessFactor !== undefined) {
+                  material.roughness = pbr.roughnessFactor;
+                }
+              }
+              
+              // 发光
+              if (materialData.emissiveFactor) {
+                material.emissive.setRGB(
+                  materialData.emissiveFactor[0],
+                  materialData.emissiveFactor[1],
+                  materialData.emissiveFactor[2]
+                );
+              }
+              
+              // 双面渲染
+              if (materialData.doubleSided) {
+                material.side = THREE.DoubleSide;
+              }
+              
+              // 透明模式
+              if (materialData.alphaMode === 'BLEND') {
+                material.transparent = true;
+              } else if (materialData.alphaMode === 'MASK') {
+                material.alphaTest = materialData.alphaCutoff || 0.5;
+              }
+              
+              materials[index] = material;
+              console.log(`✅ 材质 ${index} 构建完成`);
+            });
+          }
+          
+          // 如果没有材质，创建默认材质
+          if (materials.length === 0) {
+            materials.push(new THREE.MeshStandardMaterial({
+              color: 0x667eea,
+              metalness: 0.3,
+              roughness: 0.4,
+            }));
+          }
+          
+          return materials;
+        }
+
+        buildMeshes(gltfData, materials) {
+          const meshes = [];
+          
+          if (gltfData.meshes) {
+            gltfData.meshes.forEach((meshData, meshIndex) => {
+              console.log(`🔧 构建网格 ${meshIndex}:`, meshData);
+              
+              if (meshData.primitives) {
+                meshData.primitives.forEach((primitive, primitiveIndex) => {
+                  try {
+                    const geometry = this.buildGeometryFromPrimitive(gltfData, primitive);
+                    
+                    // 选择材质
+                    let material = materials[0]; // 默认材质
+                    if (primitive.material !== undefined && materials[primitive.material]) {
+                      material = materials[primitive.material];
+                    }
+                    
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.name = `mesh_${meshIndex}_primitive_${primitiveIndex}`;
+                    
+                    meshes.push(mesh);
+                    console.log(`✅ 网格 ${meshIndex}.${primitiveIndex} 构建完成`);
+                    
+                  } catch (error) {
+                    console.error(`❌ 构建网格 ${meshIndex}.${primitiveIndex} 失败:`, error);
+                  }
+                });
+              }
+            });
+          }
+          
+          return meshes;
+        }
+
+        buildNode(gltfData, nodeIndex, meshes) {
+          const nodeData = gltfData.nodes[nodeIndex];
+          if (!nodeData) return null;
+          
+          const node = new THREE.Group();
+          node.name = nodeData.name || `node_${nodeIndex}`;
+          
+          // 应用变换
+          if (nodeData.matrix) {
+            const matrix = new THREE.Matrix4();
+            matrix.fromArray(nodeData.matrix);
+            node.applyMatrix4(matrix);
+          } else {
+            if (nodeData.translation) {
+              node.position.fromArray(nodeData.translation);
+            }
+            if (nodeData.rotation) {
+              node.quaternion.fromArray(nodeData.rotation);
+            }
+            if (nodeData.scale) {
+              node.scale.fromArray(nodeData.scale);
+            }
+          }
+          
+          // 添加网格
+          if (nodeData.mesh !== undefined && meshes[nodeData.mesh]) {
+            node.add(meshes[nodeData.mesh]);
+          }
+          
+          // 递归添加子节点
+          if (nodeData.children) {
+            nodeData.children.forEach(childIndex => {
+              const childNode = this.buildNode(gltfData, childIndex, meshes);
+              if (childNode) {
+                node.add(childNode);
+              }
+            });
+          }
+          
+          return node;
+        }
+
+        buildGeometryFromPrimitive(gltfData, primitive) {
+          const geometry = new THREE.BufferGeometry();
+          
+          // 构建顶点属性
+          Object.keys(primitive.attributes).forEach(attributeName => {
+            const accessorIndex = primitive.attributes[attributeName];
+            const accessor = gltfData.accessors[accessorIndex];
+            const bufferView = gltfData.bufferViews[accessor.bufferView];
+            const buffer = gltfData.buffers[bufferView.buffer];
+            
+            const data = this.extractBufferData(buffer, bufferView, accessor);
+            
+            if (data) {
+              let attributeData;
+              const itemSize = this.getAttributeItemSize(attributeName);
+              
+              if (accessor.componentType === 5126) { // FLOAT
+                attributeData = new Float32Array(data.buffer, data.byteOffset, accessor.count * itemSize);
+              } else {
+                console.warn(`不支持的组件类型: ${accessor.componentType}`);
+                return;
+              }
+              
+              const threeName = this.getThreeAttributeName(attributeName);
+              geometry.setAttribute(threeName, new THREE.BufferAttribute(attributeData, itemSize));
+              
+              console.log(`✅ 添加属性 ${attributeName} -> ${threeName}`);
+            }
+          });
+          
+          // 构建索引
+          if (primitive.indices !== undefined) {
+            const accessor = gltfData.accessors[primitive.indices];
+            const bufferView = gltfData.bufferViews[accessor.bufferView];
+            const buffer = gltfData.buffers[bufferView.buffer];
+            
+            const data = this.extractBufferData(buffer, bufferView, accessor);
+            
+            if (data) {
+              let indexData;
+              if (accessor.componentType === 5123) { // UNSIGNED_SHORT
+                indexData = new Uint16Array(data.buffer, data.byteOffset, accessor.count);
+              } else if (accessor.componentType === 5125) { // UNSIGNED_INT
+                indexData = new Uint32Array(data.buffer, data.byteOffset, accessor.count);
+              }
+              
+              if (indexData) {
+                geometry.setIndex(new THREE.BufferAttribute(indexData, 1));
+                console.log('✅ 添加索引数据');
+              }
+            }
+          }
+          
+          // 计算法向量（如果没有）
+          if (!geometry.attributes.normal) {
+            geometry.computeVertexNormals();
+            console.log('📐 计算顶点法向量');
+          }
+          
+          geometry.computeBoundingBox();
+          
+          return geometry;
+        }
+
+        extractBufferData(buffer, bufferView, accessor) {
+          if (!buffer.uri || !buffer.uri.startsWith('data:')) {
+            console.warn('不支持的缓冲区URI格式');
+            return null;
+          }
+          
+          const base64Data = buffer.uri.split(',')[1];
+          const binaryString = atob(base64Data);
+          const bufferData = new Uint8Array(binaryString.length);
+          
+          for (let i = 0; i < binaryString.length; i++) {
+            bufferData[i] = binaryString.charCodeAt(i);
+          }
+          
+          const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+          
+          return {
+            buffer: bufferData.buffer,
+            byteOffset: byteOffset
+          };
+        }
+
+        getAttributeItemSize(attributeName) {
+          const sizes = {
+            'POSITION': 3,
+            'NORMAL': 3,
+            'TEXCOORD_0': 2,
+            'TEXCOORD_1': 2,
+            'COLOR_0': 3,
+            'JOINTS_0': 4,
+            'WEIGHTS_0': 4
+          };
+          return sizes[attributeName] || 3;
+        }
+
+        getThreeAttributeName(gltfAttributeName) {
+          const mapping = {
+            'POSITION': 'position',
+            'NORMAL': 'normal',
+            'TEXCOORD_0': 'uv',
+            'TEXCOORD_1': 'uv2',
+            'COLOR_0': 'color',
+            'JOINTS_0': 'skinIndex',
+            'WEIGHTS_0': 'skinWeight'
+          };
+          return mapping[gltfAttributeName] || gltfAttributeName.toLowerCase();
         }
 
         buildGeometryFromGLTF(gltfData) {
