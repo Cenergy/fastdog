@@ -697,8 +697,8 @@
 
             this.updateProgress(80, 'WASM: 解码完成，构建模型...');
 
-            // 从解码结果构建完整模型（包含材质）
-            const modelResult = this.buildModelFromGLTF(parsedData || decodeResult.data);
+            // 从解码结果构建完整模型（包含材质）- 使用GLTFLoader保持与Stream方式一致
+            const modelResult = await this.buildModelWithGLTFLoader(parsedData || decodeResult.data);
             const totalTime = performance.now() - startTime;
 
             this.updateProgress(100, 'WASM: 加载完成!');
@@ -823,6 +823,59 @@
             originLoadBtn.disabled = false;
             loading.style.display = "none";
           }
+        }
+
+        /**
+         * 使用GLTFLoader构建完整模型（与Stream方式保持一致）
+         */
+        async buildModelWithGLTFLoader(gltfData) {
+          return new Promise((resolve, reject) => {
+            try {
+              console.log('🎨 使用GLTFLoader加载完整模型（包含材质）- WASM方式');
+              
+              // 将GLTF数据转换为Blob URL
+              const gltfBlob = new Blob([JSON.stringify(gltfData)], { type: 'application/json' });
+              const gltfUrl = URL.createObjectURL(gltfBlob);
+              
+              const loader = new GLTFLoader();
+              loader.load(
+                gltfUrl,
+                (gltf) => {
+                  // 清理Blob URL
+                  URL.revokeObjectURL(gltfUrl);
+                  
+                  console.log('✅ GLTFLoader加载成功，保留完整材质 - WASM方式');
+                  
+                  // 提取第一个几何体用于向后兼容
+                  let geometry = null;
+                  gltf.scene.traverse((child) => {
+                    if (child.isMesh && child.geometry && !geometry) {
+                      geometry = child.geometry;
+                    }
+                  });
+                  
+                  if (!geometry) {
+                    // 如果没有找到几何体，创建一个默认的
+                    geometry = new THREE.BoxGeometry(1, 1, 1);
+                  }
+                  
+                  // 返回完整的模型和几何体
+                  resolve({
+                    model: gltf.scene,
+                    geometry: geometry
+                  });
+                },
+                undefined,
+                (error) => {
+                  URL.revokeObjectURL(gltfUrl);
+                  console.error('❌ GLTFLoader加载失败 - WASM方式:', error);
+                  reject(error);
+                }
+              );
+            } catch (error) {
+              reject(error);
+            }
+          });
         }
 
         buildModelFromGLTF(gltfData) {
@@ -1132,17 +1185,9 @@
         }
 
         extractBufferData(buffer, bufferView, accessor) {
-          if (!buffer.uri || !buffer.uri.startsWith('data:')) {
-            console.warn('不支持的缓冲区URI格式');
+          const bufferData = this.extractBufferDataSafe(buffer);
+          if (!bufferData) {
             return null;
-          }
-          
-          const base64Data = buffer.uri.split(',')[1];
-          const binaryString = atob(base64Data);
-          const bufferData = new Uint8Array(binaryString.length);
-          
-          for (let i = 0; i < binaryString.length; i++) {
-            bufferData[i] = binaryString.charCodeAt(i);
           }
           
           const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
@@ -1151,6 +1196,82 @@
             buffer: bufferData.buffer,
             byteOffset: byteOffset
           };
+        }
+
+        extractBufferDataSafe(buffer) {
+          console.log('🔍 提取缓冲区数据:', buffer);
+          
+          try {
+            // 情况1: data URI格式 (标准GLTF)
+            if (buffer.uri && buffer.uri.startsWith('data:')) {
+              console.log('📋 处理data URI格式缓冲区');
+              const base64Data = buffer.uri.split(',')[1];
+              const binaryString = atob(base64Data);
+              const bufferData = new Uint8Array(binaryString.length);
+              
+              for (let i = 0; i < binaryString.length; i++) {
+                bufferData[i] = binaryString.charCodeAt(i);
+              }
+              
+              return bufferData;
+            }
+            
+            // 情况2: 直接的ArrayBuffer或Uint8Array (WASM解码后)
+            if (buffer instanceof ArrayBuffer) {
+              console.log('📋 处理ArrayBuffer格式缓冲区');
+              return new Uint8Array(buffer);
+            }
+            
+            if (buffer instanceof Uint8Array) {
+              console.log('📋 处理Uint8Array格式缓冲区');
+              return buffer;
+            }
+            
+            // 情况3: 包含data属性的对象
+            if (buffer.data) {
+              console.log('📋 处理包含data属性的缓冲区');
+              if (buffer.data instanceof ArrayBuffer) {
+                return new Uint8Array(buffer.data);
+              }
+              if (buffer.data instanceof Uint8Array) {
+                return buffer.data;
+              }
+              if (typeof buffer.data === 'string') {
+                // 可能是base64编码的字符串
+                try {
+                  const binaryString = atob(buffer.data);
+                  const bufferData = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bufferData[i] = binaryString.charCodeAt(i);
+                  }
+                  return bufferData;
+                } catch (e) {
+                  console.warn('⚠️ 无法解码data属性中的base64字符串:', e);
+                }
+              }
+            }
+            
+            // 情况4: 包含byteLength属性的类数组对象
+            if (buffer.byteLength !== undefined && buffer.length !== undefined) {
+              console.log('📋 处理类数组缓冲区对象');
+              return new Uint8Array(buffer);
+            }
+            
+            console.warn('⚠️ 不支持的缓冲区格式:', {
+              type: typeof buffer,
+              constructor: buffer.constructor?.name,
+              keys: Object.keys(buffer || {}),
+              hasUri: !!buffer.uri,
+              hasData: !!buffer.data,
+              hasByteLength: buffer.byteLength !== undefined
+            });
+            
+            return null;
+            
+          } catch (error) {
+            console.error('❌ 提取缓冲区数据失败:', error);
+            return null;
+          }
         }
 
         getAttributeItemSize(attributeName) {
@@ -1348,18 +1469,13 @@
               
               console.log('📍 位置访问器:', positionAccessor);
               console.log('📍 位置缓冲视图:', positionBufferView);
+              console.log('📍 位置缓冲区:', positionBuffer);
               
-              // 解码base64数据
-              let bufferData;
-              if (positionBuffer.uri && positionBuffer.uri.startsWith('data:')) {
-                const base64Data = positionBuffer.uri.split(',')[1];
-                const binaryString = atob(base64Data);
-                bufferData = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bufferData[i] = binaryString.charCodeAt(i);
-                }
-              } else {
-                console.warn('⚠️ 不支持的缓冲区URI格式');
+              // 处理不同格式的缓冲区数据
+              let bufferData = this.extractBufferDataSafe(positionBuffer);
+              
+              if (!bufferData) {
+                console.warn('⚠️ 无法提取缓冲区数据，使用默认几何体');
                 return new THREE.BoxGeometry(2, 2, 2);
               }
               
@@ -1383,16 +1499,8 @@
               const normalBufferView = gltfData.bufferViews[normalAccessor.bufferView];
               const normalBuffer = gltfData.buffers[normalBufferView.buffer];
               
-              // 解码base64数据
-              let bufferData;
-              if (normalBuffer.uri && normalBuffer.uri.startsWith('data:')) {
-                const base64Data = normalBuffer.uri.split(',')[1];
-                const binaryString = atob(base64Data);
-                bufferData = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bufferData[i] = binaryString.charCodeAt(i);
-                }
-              }
+              // 处理不同格式的缓冲区数据
+              let bufferData = this.extractBufferDataSafe(normalBuffer);
               
               if (bufferData) {
                 const byteOffset = (normalBufferView.byteOffset || 0) + (normalAccessor.byteOffset || 0);
@@ -1413,16 +1521,8 @@
               const indexBufferView = gltfData.bufferViews[indexAccessor.bufferView];
               const indexBuffer = gltfData.buffers[indexBufferView.buffer];
               
-              // 解码base64数据
-              let bufferData;
-              if (indexBuffer.uri && indexBuffer.uri.startsWith('data:')) {
-                const base64Data = indexBuffer.uri.split(',')[1];
-                const binaryString = atob(base64Data);
-                bufferData = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bufferData[i] = binaryString.charCodeAt(i);
-                }
-              }
+              // 处理不同格式的缓冲区数据
+              let bufferData = this.extractBufferDataSafe(indexBuffer);
               
               if (bufferData) {
                 const byteOffset = (indexBufferView.byteOffset || 0) + (indexAccessor.byteOffset || 0);
