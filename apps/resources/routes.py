@@ -38,7 +38,7 @@ import zlib
 import io
 import hashlib
 from functools import lru_cache
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 from core.settings import settings
 from datetime import datetime
 
@@ -595,8 +595,8 @@ async def count_model3ds_api(
     )
 
 
-@router.get("/models/uuid/{uuid}")
-async def stream_model_by_uuid(uuid: str, range: str = Header(None)):
+@router.api_route("/models/uuid/{uuid}", methods=["GET", "HEAD"])
+async def stream_model_by_uuid(request: Request, uuid: str, range: str = Header(None)):
     """根据模型UUID以自定义二进制格式流式传输模型"""
     # 首先从数据库获取模型信息
     model = await get_model3d_by_uuid(uuid)
@@ -703,6 +703,15 @@ async def stream_model_by_uuid(uuid: str, range: str = Header(None)):
             "X-Model-Name": model.name,
             "X-Model-UUID": model.uuid
         }
+        
+        # 对于HEAD请求，只返回响应头，不返回响应体
+        if request.method == "HEAD":
+            from fastapi.responses import Response
+            return Response(
+                status_code=206 if range else 200,
+                headers=headers,
+                media_type="application/octet-stream"
+            )
         
         return StreamingResponse(
             binary_iterator(), 

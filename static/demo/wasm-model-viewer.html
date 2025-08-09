@@ -243,6 +243,93 @@
           opacity: 0.5;
         }
       }
+      
+      /* 流式加载控制面板样式 */
+      #streamControls {
+        border: 2px solid #4299e1;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+      }
+      
+      #streamControls .section-title {
+        color: #2b6cb0;
+        border-bottom-color: #4299e1;
+      }
+      
+      #streamControls select {
+        background: white;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        padding: 4px 8px;
+        width: 100%;
+      }
+      
+      #streamControls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: #2d3748;
+      }
+      
+      #streamControls input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+      }
+      
+      #streamControls button {
+        padding: 6px 12px;
+        margin: 2px;
+        border-radius: 4px;
+        font-size: 12px;
+        min-width: 70px;
+      }
+      
+      #pauseBtn {
+        background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+      }
+      
+      #resumeBtn {
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+      }
+      
+      #cancelBtn {
+        background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+      }
+      
+      /* 流式进度详细信息样式 */
+      #streamProgress {
+        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 10px;
+      }
+      
+      #streamProgress .info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      
+      #streamProgress .info-item:last-child {
+        border-bottom: none;
+      }
+      
+      #streamProgress .info-label {
+        font-size: 12px;
+        color: #4a5568;
+        font-weight: 500;
+      }
+      
+      #streamProgress .info-value {
+        font-size: 12px;
+        color: #2d3748;
+        font-weight: 600;
+        font-family: 'Courier New', monospace;
+      }
     </style>
   </head>
   <body>
@@ -278,10 +365,37 @@
             <button class="method-btn" data-method="gltf">GLTF</button>
             <button class="method-btn" data-method="enhanced">Enhanced</button>
             <button class="method-btn active" data-method="wasm">WASM解码</button>
+            <button class="method-btn" data-method="stream-wasm">🌊 流式WASM</button>
           </div>
           <div class="form-group">
             <button id="loadBtn">🚀 加载模型</button>
             <button id="infoBtn">📋 获取信息</button>
+          </div>
+          
+          <!-- 流式加载控制面板 -->
+          <div class="section" id="streamControls" style="display: none;">
+            <div class="section-title">🌊 流式加载控制</div>
+            <div class="form-group">
+              <label>分块大小:</label>
+              <select id="chunkSize">
+                <option value="65536">64KB</option>
+                <option value="131072" selected>128KB</option>
+                <option value="262144">256KB</option>
+                <option value="524288">512KB</option>
+                <option value="1048576">1MB</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="enableResume" checked>
+                启用断点续传
+              </label>
+            </div>
+            <div class="form-group">
+              <button id="pauseBtn" disabled>⏸️ 暂停</button>
+              <button id="resumeBtn" disabled>▶️ 继续</button>
+              <button id="cancelBtn" disabled>❌ 取消</button>
+            </div>
           </div>
         </div>
 
@@ -301,6 +415,30 @@
               <div class="progress-fill" id="progressFill"></div>
             </div>
             <div class="progress-text" id="progressText">等待加载...</div>
+          </div>
+          
+          <!-- 流式加载详细进度 -->
+          <div id="streamProgress" style="display: none;">
+            <div class="info-item">
+              <span class="info-label">已下载:</span>
+              <span class="info-value" id="downloadedSize">0 MB</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">总大小:</span>
+              <span class="info-value" id="totalSize">未知</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">下载速度:</span>
+              <span class="info-value" id="downloadSpeed">0 KB/s</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">剩余时间:</span>
+              <span class="info-value" id="remainingTime">计算中...</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">当前分块:</span>
+              <span class="info-value" id="currentChunk">0/0</span>
+            </div>
           </div>
         </div>
 
@@ -380,6 +518,19 @@
           this.loadMethod = "wasm";
           this.authToken = null;
           this.wasmDecoder = null;
+          
+          // 流式加载相关属性
+          this.streamController = null;
+          this.downloadBuffer = null;
+          this.downloadedBytes = 0;
+          this.totalBytes = 0;
+          this.chunkSize = 131072; // 默认128KB
+          this.isPaused = false;
+          this.isCancelled = false;
+          this.downloadStartTime = 0;
+          this.lastProgressTime = 0;
+          this.lastDownloadedBytes = 0;
+          this.resumeData = null; // 断点续传数据
 
           this.modelLoader = new WASMModelLoader(
             "/api/v1/resources",
@@ -511,6 +662,17 @@
                 .forEach((b) => b.classList.remove("active"));
               e.target.classList.add("active");
               this.loadMethod = e.target.dataset.method;
+              
+              // 显示/隐藏流式加载控制面板
+              const streamControls = document.getElementById('streamControls');
+              const streamProgress = document.getElementById('streamProgress');
+              if (this.loadMethod === 'stream-wasm') {
+                streamControls.style.display = 'block';
+                streamProgress.style.display = 'block';
+              } else {
+                streamControls.style.display = 'none';
+                streamProgress.style.display = 'none';
+              }
             });
           });
 
@@ -533,6 +695,22 @@
           document
             .getElementById("toggleInfoBtn")
             .addEventListener("click", () => this.toggleInfo());
+            
+          // 流式加载控制按钮事件
+          document
+            .getElementById("pauseBtn")
+            .addEventListener("click", () => this.pauseDownload());
+          document
+            .getElementById("resumeBtn")
+            .addEventListener("click", () => this.resumeDownload());
+          document
+            .getElementById("cancelBtn")
+            .addEventListener("click", () => this.cancelDownload());
+          document
+            .getElementById("chunkSize")
+            .addEventListener("change", (e) => {
+              this.chunkSize = parseInt(e.target.value);
+            });
 
           // 窗口大小调整
           window.addEventListener("resize", () => this.onWindowResize());
@@ -583,6 +761,10 @@
 
               case "wasm":
                 result = await this.loadModelWASM(filename);
+                break;
+                
+              case "stream-wasm":
+                result = await this.loadModelStreamWASM(filename);
                 break;
             }
 
@@ -654,12 +836,12 @@
               headers['Authorization'] = `Bearer ${this.authToken}`;
             }
 
-            const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
-              headers
-            });
-            // const response = await fetch(`/api/v1/resources/models/uuid/643fde5910e04622b5581909c276cbf1`, {
+            // const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
             //   headers
             // });
+            const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+              headers
+            });
 
             if (!response.ok) {
               throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -732,6 +914,370 @@
             console.error('WASM 模型加载失败:', error);
             throw error;
           }
+        }
+
+        /**
+         * 流式WASM加载方法 - 支持分块下载、断点续传、实时进度反馈
+         */
+        async loadModelStreamWASM(filename) {
+          if (!this.wasmDecoder) {
+            throw new Error('WASM 解码器未初始化');
+          }
+
+          const startTime = performance.now();
+          this.downloadStartTime = startTime;
+          this.lastProgressTime = startTime;
+          this.lastDownloadedBytes = 0;
+          this.isPaused = false;
+          this.isCancelled = false;
+          
+          // 启用控制按钮
+          this.updateStreamControlButtons(true, false, true);
+          
+          try {
+            this.updateProgress(5, '🌊 流式WASM: 获取文件信息...');
+            
+            // 获取文件大小和支持的范围请求
+            const fileInfo = await this.getFileInfo(filename);
+            this.totalBytes = fileInfo.size;
+            
+            this.updateStreamInfo(0, this.totalBytes, 0, '计算中...', 0, 0);
+            this.updateProgress(10, '🌊 流式WASM: 开始分块下载...');
+            
+            // 检查是否有断点续传数据
+            const enableResume = document.getElementById('enableResume').checked;
+            let startByte = 0;
+            if (enableResume && this.resumeData && this.resumeData.filename === filename) {
+              startByte = this.resumeData.downloadedBytes;
+              this.downloadedBytes = startByte;
+              console.log(`📥 断点续传: 从字节 ${startByte} 开始下载`);
+            }
+            
+            // 分块下载
+            const chunks = await this.downloadFileInChunks(filename, startByte);
+            
+            if (this.isCancelled) {
+              throw new Error('下载已取消');
+            }
+            
+            this.updateProgress(70, '🌊 流式WASM: 合并数据块...');
+            
+            // 合并所有数据块
+            const binaryData = this.mergeChunks(chunks);
+            const downloadTime = performance.now() - startTime;
+            
+            this.updateProgress(80, '🌊 流式WASM: 使用 WASM 解码中...');
+            
+            // 使用 WASM 解码
+            const decodeStartTime = performance.now();
+            const decodeResult = await this.wasmDecoder.decode(binaryData);
+            const decodeTime = performance.now() - decodeStartTime;
+            
+            // 解析数据
+            let parsedData = decodeResult.data;
+            if (typeof decodeResult.data === 'string') {
+              try {
+                parsedData = JSON.parse(decodeResult.data);
+              } catch (e) {
+                console.warn('⚠️ 无法解析为JSON:', e);
+              }
+            }
+            
+            this.updateProgress(90, '🌊 流式WASM: 构建模型...');
+            
+            // 构建模型
+            const modelResult = await this.buildModelWithGLTFLoader(parsedData || decodeResult.data);
+            const totalTime = performance.now() - startTime;
+            
+            this.updateProgress(100, '🌊 流式WASM: 加载完成!');
+            
+            // 清除断点续传数据
+            this.resumeData = null;
+            
+            // 禁用控制按钮
+            this.updateStreamControlButtons(false, false, false);
+            
+            const stats = decodeResult.stats || {
+              originalSize: binaryData.byteLength,
+              compressedSize: binaryData.byteLength,
+              compressionRatio: 1.0,
+              wasmDecodeTime: decodeTime
+            };
+            
+            return {
+              model: modelResult.model,
+              geometry: modelResult.geometry,
+              format: 'stream-wasm',
+              performanceStats: {
+                downloadTime: downloadTime.toFixed(2),
+                decodeTime: decodeTime.toFixed(2),
+                totalTime: totalTime.toFixed(2),
+                originalSize: stats.originalSize,
+                compressedSize: stats.compressedSize,
+                compressionRatio: (stats.compressionRatio * 100).toFixed(1),
+                wasmDecodeTime: (stats.wasmDecodeTime || decodeTime).toFixed(2),
+                chunksCount: chunks.length,
+                chunkSize: this.chunkSize
+              },
+              wasmStats: stats
+            };
+            
+          } catch (error) {
+            console.error('流式WASM 模型加载失败:', error);
+            this.updateStreamControlButtons(false, false, false);
+            throw error;
+          }
+        }
+        
+        /**
+         * 获取文件信息（大小等）
+         */
+        async getFileInfo(filename) {
+          const headers = {};
+          if (this.authToken) {
+            headers['Authorization'] = `Bearer ${this.authToken}`;
+          }
+          
+          const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+            method: 'HEAD',
+            headers
+          });
+          
+          if (!response.ok) {
+            throw new Error(`无法获取文件信息: ${response.status}`);
+          }
+          
+          const contentLength = response.headers.get('content-length');
+          const acceptRanges = response.headers.get('accept-ranges');
+          
+          return {
+            size: parseInt(contentLength) || 0,
+            supportsRanges: acceptRanges === 'bytes'
+          };
+        }
+        
+        /**
+         * 分块下载文件
+         */
+        async downloadFileInChunks(filename, startByte = 0) {
+          const chunks = [];
+          let currentByte = startByte;
+          let chunkIndex = Math.floor(startByte / this.chunkSize);
+          const totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+          
+          while (currentByte < this.totalBytes && !this.isCancelled) {
+            // 检查是否暂停
+            while (this.isPaused && !this.isCancelled) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            if (this.isCancelled) break;
+            
+            const endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+            
+            try {
+              const chunk = await this.downloadChunk(filename, currentByte, endByte);
+              chunks.push(chunk);
+              
+              currentByte = endByte + 1;
+              this.downloadedBytes = currentByte;
+              chunkIndex++;
+              
+              // 更新进度
+              const progress = (this.downloadedBytes / this.totalBytes) * 60; // 下载占60%进度
+              const currentTime = performance.now();
+              const speed = this.calculateDownloadSpeed(currentTime);
+              const remainingTime = this.calculateRemainingTime(speed);
+              
+              // 添加请求间隔延迟以避免触发限流
+              if (currentByte < this.totalBytes) {
+                await new Promise(resolve => setTimeout(resolve, 50)); // 50ms延迟
+              }
+              
+              this.updateProgress(10 + progress, `🌊 下载中... ${this.formatBytes(this.downloadedBytes)}/${this.formatBytes(this.totalBytes)}`);
+              this.updateStreamInfo(
+                this.downloadedBytes,
+                this.totalBytes,
+                speed,
+                remainingTime,
+                chunkIndex,
+                totalChunks
+              );
+              
+              // 保存断点续传数据
+              if (document.getElementById('enableResume').checked) {
+                this.resumeData = {
+                  filename: filename,
+                  downloadedBytes: this.downloadedBytes,
+                  totalBytes: this.totalBytes,
+                  timestamp: Date.now()
+                };
+              }
+              
+            } catch (error) {
+              console.error(`下载分块 ${chunkIndex} 失败:`, error);
+              // 重试机制
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              continue;
+            }
+          }
+          
+          return chunks;
+        }
+        
+        /**
+         * 下载单个数据块
+         */
+        async downloadChunk(filename, startByte, endByte, retryCount = 0) {
+          const headers = {
+            'Range': `bytes=${startByte}-${endByte}`
+          };
+          
+          if (this.authToken) {
+            headers['Authorization'] = `Bearer ${this.authToken}`;
+          }
+          
+          try {
+            const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+              headers
+            });
+            
+            if (response.status === 429 && retryCount < 3) {
+              // 遇到限流错误时，等待更长时间后重试
+              const delay = Math.pow(2, retryCount) * 1000; // 指数退避: 1s, 2s, 4s
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return this.downloadChunk(filename, startByte, endByte, retryCount + 1);
+            }
+            
+            if (!response.ok) {
+              throw new Error(`下载分块失败: ${response.status}`);
+            }
+            
+            return await response.arrayBuffer();
+          } catch (error) {
+            if (retryCount < 3) {
+              // 网络错误时也进行重试
+              const delay = Math.pow(2, retryCount) * 1000;
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return this.downloadChunk(filename, startByte, endByte, retryCount + 1);
+            }
+            throw error;
+          }
+        }
+        
+        /**
+         * 合并数据块
+         */
+        mergeChunks(chunks) {
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+          const merged = new Uint8Array(totalLength);
+          
+          let offset = 0;
+          for (const chunk of chunks) {
+            merged.set(new Uint8Array(chunk), offset);
+            offset += chunk.byteLength;
+          }
+          
+          return merged.buffer;
+        }
+        
+        /**
+         * 计算下载速度
+         */
+        calculateDownloadSpeed(currentTime) {
+          const timeDiff = currentTime - this.lastProgressTime;
+          const bytesDiff = this.downloadedBytes - this.lastDownloadedBytes;
+          
+          if (timeDiff > 1000) { // 每秒更新一次
+            const speed = (bytesDiff / timeDiff) * 1000; // bytes per second
+            this.lastProgressTime = currentTime;
+            this.lastDownloadedBytes = this.downloadedBytes;
+            return speed;
+          }
+          
+          return 0;
+        }
+        
+        /**
+         * 计算剩余时间
+         */
+        calculateRemainingTime(speed) {
+          if (speed <= 0) return '计算中...';
+          
+          const remainingBytes = this.totalBytes - this.downloadedBytes;
+          const remainingSeconds = remainingBytes / speed;
+          
+          if (remainingSeconds < 60) {
+            return `${Math.round(remainingSeconds)}秒`;
+          } else if (remainingSeconds < 3600) {
+            return `${Math.round(remainingSeconds / 60)}分钟`;
+          } else {
+            return `${Math.round(remainingSeconds / 3600)}小时`;
+          }
+        }
+        
+        /**
+         * 格式化字节大小
+         */
+        formatBytes(bytes) {
+          if (bytes === 0) return '0 B';
+          
+          const k = 1024;
+          const sizes = ['B', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        /**
+         * 更新流式进度信息
+         */
+        updateStreamInfo(downloaded, total, speed, remainingTime, currentChunk, totalChunks) {
+          document.getElementById('downloadedSize').textContent = this.formatBytes(downloaded);
+          document.getElementById('totalSize').textContent = this.formatBytes(total);
+          document.getElementById('downloadSpeed').textContent = speed > 0 ? this.formatBytes(speed) + '/s' : '0 KB/s';
+          document.getElementById('remainingTime').textContent = remainingTime;
+          document.getElementById('currentChunk').textContent = `${currentChunk}/${totalChunks}`;
+        }
+        
+        /**
+         * 更新流式控制按钮状态
+         */
+        updateStreamControlButtons(pauseEnabled, resumeEnabled, cancelEnabled) {
+          document.getElementById('pauseBtn').disabled = !pauseEnabled;
+          document.getElementById('resumeBtn').disabled = !resumeEnabled;
+          document.getElementById('cancelBtn').disabled = !cancelEnabled;
+        }
+        
+        /**
+         * 暂停下载
+         */
+        pauseDownload() {
+          this.isPaused = true;
+          this.updateStreamControlButtons(false, true, true);
+          this.updateProgress(this.downloadedBytes / this.totalBytes * 60 + 10, '⏸️ 下载已暂停');
+        }
+        
+        /**
+         * 继续下载
+         */
+        resumeDownload() {
+          this.isPaused = false;
+          this.updateStreamControlButtons(true, false, true);
+          this.updateProgress(this.downloadedBytes / this.totalBytes * 60 + 10, '▶️ 继续下载中...');
+        }
+        
+        /**
+         * 取消下载
+         */
+        cancelDownload() {
+          this.isCancelled = true;
+          this.isPaused = false;
+          this.updateStreamControlButtons(false, false, false);
+          this.updateProgress(0, '❌ 下载已取消');
+          
+          // 清除断点续传数据
+          this.resumeData = null;
         }
 
         async loadOriginalModel() {
