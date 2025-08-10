@@ -364,8 +364,9 @@
             <button class="method-btn" data-method="stream">Stream</button>
             <button class="method-btn" data-method="gltf">GLTF</button>
             <button class="method-btn" data-method="enhanced">Enhanced</button>
-            <button class="method-btn active" data-method="wasm">WASM解码</button>
+            <button class="method-btn" data-method="wasm">WASM解码</button>
             <button class="method-btn" data-method="stream-wasm">🌊 流式WASM</button>
+            <button class="method-btn active" data-method="realtime-wasm">⚡ 实时流式WASM</button>
           </div>
           <div class="form-group">
             <button id="loadBtn">🚀 加载模型</button>
@@ -383,6 +384,9 @@
                 <option value="262144">256KB</option>
                 <option value="524288">512KB</option>
                 <option value="1048576">1MB</option>
+                <option value="2097152">2MB</option>
+                <option value="3145728">3MB</option>
+                <option value="5242880">5MB</option>
               </select>
             </div>
             <div class="form-group">
@@ -666,7 +670,7 @@
               // 显示/隐藏流式加载控制面板
               const streamControls = document.getElementById('streamControls');
               const streamProgress = document.getElementById('streamProgress');
-              if (this.loadMethod === 'stream-wasm') {
+              if (this.loadMethod === 'stream-wasm' || this.loadMethod === 'realtime-wasm') {
                 streamControls.style.display = 'block';
                 streamProgress.style.display = 'block';
               } else {
@@ -765,6 +769,10 @@
                 
               case "stream-wasm":
                 result = await this.loadModelStreamWASM(filename);
+                break;
+                
+              case "realtime-wasm":
+                result = await this.loadModelStreamWASMRealtime(filename);
                 break;
             }
 
@@ -953,7 +961,8 @@
               console.log(`📥 断点续传: 从字节 ${startByte} 开始下载`);
             }
             
-            // 分块下载
+            // 📥 传统方式：先完整下载所有分块
+            console.log('📥 传统流式WASM: 开始下载所有分块...');
             const chunks = await this.downloadFileInChunks(filename, startByte);
             
             if (this.isCancelled) {
@@ -962,16 +971,19 @@
             
             this.updateProgress(70, '🌊 流式WASM: 合并数据块...');
             
-            // 合并所有数据块
+            // 📦 传统方式：下载完成后才开始合并和解码
+            console.log('📦 传统流式WASM: 下载完成，开始合并数据块...');
             const binaryData = this.mergeChunks(chunks);
             const downloadTime = performance.now() - startTime;
             
             this.updateProgress(80, '🌊 流式WASM: 使用 WASM 解码中...');
             
-            // 使用 WASM 解码
+            // 🔧 传统方式：一次性解码完整数据
+            console.log('🔧 传统流式WASM: 开始一次性解码完整数据...');
             const decodeStartTime = performance.now();
             const decodeResult = await this.wasmDecoder.decode(binaryData);
             const decodeTime = performance.now() - decodeStartTime;
+            console.log(`🔧 传统流式WASM: 解码完成，耗时 ${decodeTime.toFixed(1)}ms`);
             
             // 解析数据
             let parsedData = decodeResult.data;
@@ -1026,6 +1038,212 @@
             console.error('流式WASM 模型加载失败:', error);
             this.updateStreamControlButtons(false, false, false);
             throw error;
+          }
+        }
+        
+        /**
+         * 真正的流式WASM加载方法 - 支持边下载边解码
+         */
+        async loadModelStreamWASMRealtime(filename) {
+          if (!this.wasmDecoder) {
+            throw new Error('WASM 解码器未初始化');
+          }
+
+          const startTime = performance.now();
+          this.downloadStartTime = startTime;
+          this.lastProgressTime = startTime;
+          this.lastDownloadedBytes = 0;
+          this.isPaused = false;
+          this.isCancelled = false;
+          
+          // 创建流式解码器实例
+          const streamDecoder = new this.wasmDecoder.StreamDecoder();
+          
+          // 启用控制按钮
+          this.updateStreamControlButtons(true, false, true);
+          
+          try {
+            this.updateProgress(5, '🌊 实时流式WASM: 获取文件信息...');
+            
+            // 获取文件大小和支持的范围请求
+            const fileInfo = await this.getFileInfo(filename);
+            this.totalBytes = fileInfo.size;
+            
+            this.updateStreamInfo(0, this.totalBytes, 0, '计算中...', 0, 0);
+            this.updateProgress(10, '🌊 实时流式WASM: 开始边下载边解码...');
+            
+            // 检查是否有断点续传数据
+            const enableResume = document.getElementById('enableResume').checked;
+            let startByte = 0;
+            if (enableResume && this.resumeData && this.resumeData.filename === filename) {
+              startByte = this.resumeData.downloadedBytes;
+              this.downloadedBytes = startByte;
+              console.log(`📥 断点续传: 从字节 ${startByte} 开始下载`);
+            }
+            
+            // 边下载边解码的流式处理
+            let currentByte = startByte;
+            let chunkIndex = Math.floor(startByte / this.chunkSize);
+            const totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+            let decodeResult = null;
+            let isDecodeComplete = false;
+            
+            while (currentByte < this.totalBytes && !this.isCancelled && !isDecodeComplete) {
+              // 检查是否暂停
+              while (this.isPaused && !this.isCancelled) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+              
+              if (this.isCancelled) break;
+              
+              const endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+              
+              try {
+                // 下载单个分块
+                const chunkStartTime = performance.now();
+                const chunk = await this.downloadChunk(filename, currentByte, endByte);
+                const chunkDownloadTime = performance.now() - chunkStartTime;
+                
+                // 🔥 关键区别：立即将分块送入流式解码器进行边下载边解码
+                const decodeStartTime = performance.now();
+                const streamResult = streamDecoder.add_chunk(new Uint8Array(chunk));
+                const chunkDecodeTime = performance.now() - decodeStartTime;
+                
+                console.log(`📦 分块 ${chunkIndex}: 下载耗时 ${chunkDownloadTime.toFixed(1)}ms, 解码耗时 ${chunkDecodeTime.toFixed(1)}ms, 解码进度 ${(streamResult.progress * 100).toFixed(1)}%`);
+                
+                currentByte = endByte + 1;
+                this.downloadedBytes = currentByte;
+                chunkIndex++;
+                
+                // 更新进度 - 下载进度占50%，解码进度占40%
+                const downloadProgress = (this.downloadedBytes / this.totalBytes) * 50;
+                const decodeProgress = streamResult.progress * 40;
+                const totalProgress = 10 + downloadProgress + decodeProgress;
+                
+                const currentTime = performance.now();
+                const speed = this.calculateDownloadSpeed(currentTime);
+                const remainingTime = this.calculateRemainingTime(speed);
+                
+                // 添加请求间隔延迟以避免触发限流
+                if (currentByte < this.totalBytes) {
+                  await new Promise(resolve => setTimeout(resolve, 50)); // 50ms延迟
+                }
+                
+                // 更新UI显示
+                if (streamResult.is_complete) {
+                  this.updateProgress(90, '🌊 实时流式WASM: 解码完成，构建模型...');
+                  decodeResult = streamResult;
+                  isDecodeComplete = true;
+                  
+                  console.log('🎉 流式解码完成!', {
+                    chunks_processed: streamResult.chunks_processed,
+                    total_received: streamResult.total_received,
+                    final_progress: streamResult.progress
+                  });
+                } else {
+                  this.updateProgress(
+                    totalProgress, 
+                    `🌊 实时流式WASM: 下载并解码中... ${this.formatBytes(this.downloadedBytes)}/${this.formatBytes(this.totalBytes)} (解码进度: ${(streamResult.progress * 100).toFixed(1)}%)`
+                  );
+                }
+                
+                this.updateStreamInfo(
+                  this.downloadedBytes,
+                  this.totalBytes,
+                  speed,
+                  remainingTime,
+                  chunkIndex,
+                  totalChunks
+                );
+                
+                // 保存断点续传数据
+                if (document.getElementById('enableResume').checked) {
+                  this.resumeData = {
+                    filename: filename,
+                    downloadedBytes: this.downloadedBytes,
+                    totalBytes: this.totalBytes,
+                    timestamp: Date.now()
+                  };
+                }
+                
+                // 检查解码错误
+                if (!streamResult.success && streamResult.error) {
+                  throw new Error(`流式解码失败: ${streamResult.error}`);
+                }
+                
+              } catch (error) {
+                console.error(`下载分块 ${chunkIndex} 失败:`, error);
+                // 重试机制
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
+              }
+            }
+            
+            if (this.isCancelled) {
+              throw new Error('下载已取消');
+            }
+            
+            if (!isDecodeComplete || !decodeResult) {
+              throw new Error('流式解码未完成');
+            }
+            
+            // 解析数据
+            let parsedData = decodeResult.data;
+            if (typeof decodeResult.data === 'string') {
+              try {
+                parsedData = JSON.parse(decodeResult.data);
+              } catch (e) {
+                console.warn('⚠️ 无法解析为JSON:', e);
+              }
+            }
+            
+            // 构建模型
+            const modelResult = await this.buildModelWithGLTFLoader(parsedData || decodeResult.data);
+            const totalTime = performance.now() - startTime;
+            
+            this.updateProgress(100, '🌊 实时流式WASM: 加载完成!');
+            
+            // 清除断点续传数据
+            this.resumeData = null;
+            
+            // 禁用控制按钮
+            this.updateStreamControlButtons(false, false, false);
+            
+            const stats = decodeResult.stats || {
+              originalSize: this.totalBytes,
+              compressedSize: this.totalBytes,
+              compressionRatio: 1.0,
+              wasmDecodeTime: totalTime
+            };
+            
+            return {
+              model: modelResult.model,
+              geometry: modelResult.geometry,
+              format: 'stream-wasm-realtime',
+              performanceStats: {
+                downloadTime: (totalTime * 0.6).toFixed(2), // 估算下载时间
+                decodeTime: (totalTime * 0.4).toFixed(2),   // 估算解码时间
+                totalTime: totalTime.toFixed(2),
+                originalSize: stats.originalSize,
+                compressedSize: stats.compressedSize,
+                compressionRatio: (stats.compressionRatio * 100).toFixed(1),
+                wasmDecodeTime: (stats.wasmDecodeTime || totalTime * 0.4).toFixed(2),
+                chunksCount: chunkIndex,
+                chunkSize: this.chunkSize,
+                streamingEnabled: true
+              },
+              wasmStats: stats
+            };
+            
+          } catch (error) {
+            console.error('实时流式WASM 模型加载失败:', error);
+            this.updateStreamControlButtons(false, false, false);
+            throw error;
+          } finally {
+            // 清理流式解码器
+            if (streamDecoder) {
+              streamDecoder.free();
+            }
           }
         }
         

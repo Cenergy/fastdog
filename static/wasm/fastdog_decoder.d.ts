@@ -8,6 +8,15 @@ export function get_decode_stats(data: Uint8Array): any;
 export function validate_fastdog_format(data: Uint8Array): boolean;
 export function get_format_info(data: Uint8Array): any;
 export function benchmark_decode(data: Uint8Array, iterations: number): any;
+export class StreamDecoder {
+  free(): void;
+  constructor();
+  add_chunk(chunk: Uint8Array): any;
+  reset(): void;
+  get_progress(): number;
+  get_buffer_size(): number;
+  get_expected_size(): number | undefined;
+}
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -21,6 +30,13 @@ export interface InitOutput {
   readonly validate_fastdog_format: (a: number, b: number) => number;
   readonly get_format_info: (a: number, b: number) => any;
   readonly benchmark_decode: (a: number, b: number, c: number) => any;
+  readonly __wbg_streamdecoder_free: (a: number, b: number) => void;
+  readonly streamdecoder_new: () => number;
+  readonly streamdecoder_add_chunk: (a: number, b: number, c: number) => any;
+  readonly streamdecoder_reset: (a: number) => void;
+  readonly streamdecoder_get_progress: (a: number) => number;
+  readonly streamdecoder_get_buffer_size: (a: number) => number;
+  readonly streamdecoder_get_expected_size: (a: number) => number;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -242,6 +242,65 @@ export function benchmark_decode(data, iterations) {
     return ret;
 }
 
+const StreamDecoderFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamdecoder_free(ptr >>> 0, 1));
+
+export class StreamDecoder {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamDecoderFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamdecoder_free(ptr, 0);
+    }
+    constructor() {
+        const ret = wasm.streamdecoder_new();
+        this.__wbg_ptr = ret >>> 0;
+        StreamDecoderFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} chunk
+     * @returns {any}
+     */
+    add_chunk(chunk) {
+        const ptr0 = passArray8ToWasm0(chunk, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamdecoder_add_chunk(this.__wbg_ptr, ptr0, len0);
+        return ret;
+    }
+    reset() {
+        wasm.streamdecoder_reset(this.__wbg_ptr);
+    }
+    /**
+     * @returns {number}
+     */
+    get_progress() {
+        const ret = wasm.streamdecoder_get_progress(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_buffer_size() {
+        const ret = wasm.streamdecoder_get_buffer_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number | undefined}
+     */
+    get_expected_size() {
+        const ret = wasm.streamdecoder_get_expected_size(this.__wbg_ptr);
+        return ret === 0x100000001 ? undefined : ret;
+    }
+}
+
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {

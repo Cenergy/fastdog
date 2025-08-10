@@ -269,6 +269,22 @@ class FastDogDecoder {
     getDecoderType() {
         return this.usingJSFallback ? 'javascript' : 'wasm';
     }
+    
+    /**
+     * 获取StreamDecoder类（仅WASM模式支持）
+     * @returns {Function} StreamDecoder构造函数
+     */
+    get StreamDecoder() {
+        if (this.usingJSFallback) {
+            throw new Error('StreamDecoder仅在WASM模式下可用，当前使用JavaScript备选方案');
+        }
+        
+        if (!this.wasmModule || !this.wasmModule.StreamDecoder) {
+            throw new Error('WASM模块未初始化或StreamDecoder不可用');
+        }
+        
+        return this.wasmModule.StreamDecoder;
+    }
 }
 
 // 导出解码器类

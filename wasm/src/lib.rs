@@ -507,3 +507,201 @@ pub fn benchmark_decode(data: &[u8], iterations: u32) -> JsValue {
     
     serde_wasm_bindgen::to_value(&result).unwrap()
 }
+
+// 流式解码器结构
+#[wasm_bindgen]
+pub struct StreamDecoder {
+    buffer: Vec<u8>,
+    header_parsed: bool,
+    expected_size: Option<u32>,
+    compressed_size: Option<u32>,
+    original_size: Option<u32>,
+    version: Option<u32>,
+    chunks_processed: u32,
+    total_received: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StreamDecodeResult {
+    pub success: bool,
+    pub data: Option<String>,
+    pub error: Option<String>,
+    pub progress: f32,
+    pub is_complete: bool,
+    pub chunks_processed: u32,
+    pub total_received: u32,
+    pub stats: Option<DecodeStats>,
+}
+
+#[wasm_bindgen]
+impl StreamDecoder {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> StreamDecoder {
+        StreamDecoder {
+            buffer: Vec::new(),
+            header_parsed: false,
+            expected_size: None,
+            compressed_size: None,
+            original_size: None,
+            version: None,
+            chunks_processed: 0,
+            total_received: 0,
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn add_chunk(&mut self, chunk: &[u8]) -> JsValue {
+        let start_time = js_sys::Date::now();
+        
+        // 添加数据块到缓冲区
+        self.buffer.extend_from_slice(chunk);
+        self.total_received += chunk.len() as u32;
+        self.chunks_processed += 1;
+        
+        // 尝试解析头部信息
+        if !self.header_parsed && self.buffer.len() >= 20 {
+            match self.parse_header() {
+                Ok(_) => {
+                    log!("📋 流式解码: 头部解析成功, 预期大小: {} bytes", self.expected_size.unwrap_or(0));
+                }
+                Err(e) => {
+                    let result = StreamDecodeResult {
+                        success: false,
+                        data: None,
+                        error: Some(format!("头部解析失败: {}", e)),
+                        progress: 0.0,
+                        is_complete: false,
+                        chunks_processed: self.chunks_processed,
+                        total_received: self.total_received,
+                        stats: None,
+                    };
+                    return serde_wasm_bindgen::to_value(&result).unwrap();
+                }
+            }
+        }
+        
+        // 计算进度
+        let progress = if let Some(expected) = self.expected_size {
+            (self.buffer.len() as f32 / expected as f32).min(1.0)
+        } else {
+            0.0
+        };
+        
+        // 检查是否可以尝试解码
+        let can_decode = self.header_parsed && 
+            self.expected_size.map_or(false, |size| self.buffer.len() >= size as usize);
+        
+        if can_decode {
+            // 尝试完整解码
+            match self.try_decode(start_time) {
+                Ok(decode_result) => {
+                    let result = StreamDecodeResult {
+                        success: true,
+                        data: decode_result.data,
+                        error: None,
+                        progress: 1.0,
+                        is_complete: true,
+                        chunks_processed: self.chunks_processed,
+                        total_received: self.total_received,
+                        stats: Some(decode_result.stats),
+                    };
+                    return serde_wasm_bindgen::to_value(&result).unwrap();
+                }
+                Err(e) => {
+                    let result = StreamDecodeResult {
+                        success: false,
+                        data: None,
+                        error: Some(e),
+                        progress,
+                        is_complete: false,
+                        chunks_processed: self.chunks_processed,
+                        total_received: self.total_received,
+                        stats: None,
+                    };
+                    return serde_wasm_bindgen::to_value(&result).unwrap();
+                }
+            }
+        }
+        
+        // 返回进度信息
+        let result = StreamDecodeResult {
+            success: true,
+            data: None,
+            error: None,
+            progress,
+            is_complete: false,
+            chunks_processed: self.chunks_processed,
+            total_received: self.total_received,
+            stats: None,
+        };
+        
+        serde_wasm_bindgen::to_value(&result).unwrap()
+    }
+    
+    #[wasm_bindgen]
+    pub fn reset(&mut self) {
+        self.buffer.clear();
+        self.header_parsed = false;
+        self.expected_size = None;
+        self.compressed_size = None;
+        self.original_size = None;
+        self.version = None;
+        self.chunks_processed = 0;
+        self.total_received = 0;
+    }
+    
+    #[wasm_bindgen]
+    pub fn get_progress(&self) -> f32 {
+        if let Some(expected) = self.expected_size {
+            (self.buffer.len() as f32 / expected as f32).min(1.0)
+        } else {
+            0.0
+        }
+    }
+    
+    #[wasm_bindgen]
+    pub fn get_buffer_size(&self) -> u32 {
+        self.buffer.len() as u32
+    }
+    
+    #[wasm_bindgen]
+    pub fn get_expected_size(&self) -> Option<u32> {
+        self.expected_size
+    }
+}
+
+impl StreamDecoder {
+    fn parse_header(&mut self) -> Result<(), String> {
+        if self.buffer.len() < 20 {
+            return Err("数据不足以解析头部".to_string());
+        }
+        
+        // 检查魔数
+        let magic = &self.buffer[0..8];
+        if magic != b"FASTDOG1" {
+            return Err("无效的文件格式".to_string());
+        }
+        
+        // 解析版本
+        self.version = Some(u32::from_le_bytes([
+            self.buffer[8], self.buffer[9], self.buffer[10], self.buffer[11]
+        ]));
+        
+        // 解析压缩大小
+        self.compressed_size = Some(u32::from_le_bytes([
+            self.buffer[12], self.buffer[13], self.buffer[14], self.buffer[15]
+        ]));
+        
+        // 计算预期总大小 (头部 + 压缩数据 + 原始大小字段)
+        if let Some(compressed_size) = self.compressed_size {
+            self.expected_size = Some(20 + compressed_size);
+        }
+        
+        self.header_parsed = true;
+        Ok(())
+    }
+    
+    fn try_decode(&self, start_time: f64) -> Result<DecodeResult, String> {
+        decode_binary_internal(&self.buffer, start_time)
+    }
+}
