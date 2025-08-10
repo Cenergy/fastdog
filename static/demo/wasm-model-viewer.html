@@ -360,10 +360,7 @@
          <div class="section">
           <div class="section-title">🔄 传输方式</div>
           <div class="method-selector">
-            <button class="method-btn" data-method="blob">Blob</button>
             <button class="method-btn" data-method="stream">Stream</button>
-            <button class="method-btn" data-method="gltf">GLTF</button>
-            <button class="method-btn" data-method="enhanced">Enhanced</button>
             <button class="method-btn" data-method="wasm">WASM解码</button>
             <button class="method-btn" data-method="stream-wasm">🌊 流式WASM</button>
             <button class="method-btn active" data-method="realtime-wasm">⚡ 实时流式WASM</button>
@@ -735,15 +732,6 @@
             let result;
 
             switch (this.loadMethod) {
-              case "blob":
-                result = await this.modelLoader.loadModelBlob(
-                  filename,
-                  (progress) => {
-                    this.updateProgress(progress.percentage || 50, "下载中...");
-                  }
-                );
-                break;
-
               case "stream":
                 result = await this.modelLoader.loadModelStream(
                   filename,
@@ -754,14 +742,6 @@
                     );
                   }
                 );
-                break;
-
-              case "gltf":
-                result = await this.loadOriginalGLTF(filename);
-                break;
-
-              case "enhanced":
-                result = await this.loadEnhancedGLTF(filename);
                 break;
 
               case "wasm":
@@ -2453,52 +2433,7 @@
           });
         }
 
-        async loadOriginalGLTF(filename) {
-          return new Promise((resolve, reject) => {
-            const loader = new GLTFLoader();
-            loader.load(
-              `/static/models/${filename}`,
-              (gltf) => {
-                const geometry =
-                  gltf.scene.children[0]?.geometry || new THREE.BoxGeometry();
-                resolve({ geometry, format: "gltf" });
-              },
-              (progress) => {
-                const percentage = (progress.loaded / progress.total) * 100;
-                this.updateProgress(percentage, "下载GLTF...");
-              },
-              reject
-            );
-          });
-        }
 
-        async loadEnhancedGLTF(filename) {
-          try {
-            this.updateProgress(10, "开始增强加载...");
-            
-            // 使用自定义加载器加载并解码数据
-            const result = await this.modelLoader.loadModelBlob(
-              filename,
-              (progress) => {
-                this.updateProgress(progress.percentage * 0.8 || 40, "解码数据中...");
-              }
-            );
-            
-            this.updateProgress(90, "使用GLTFLoader处理...");
-            
-            return {
-              geometry: result.geometry,
-              format: "enhanced-gltf",
-              originalSize: result.originalSize,
-              compressedSize: result.compressedSize,
-              compressionRatio: result.compressionRatio
-            };
-            
-          } catch (error) {
-            console.error('增强GLTF加载失败:', error);
-            throw error;
-          }
-        }
 
         async getModelInfo() {
           const filename = document.getElementById("modelSelect").value;
