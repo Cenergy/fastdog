@@ -379,8 +379,9 @@
             <div class="form-group">
               <label>分块大小:</label>
               <select id="chunkSize">
+                <option value="0" selected>不分块</option>
                 <option value="65536">64KB</option>
-                <option value="131072" selected>128KB</option>
+                <option value="131072">128KB</option>
                 <option value="262144">256KB</option>
                 <option value="524288">512KB</option>
                 <option value="1048576">1MB</option>
@@ -528,7 +529,7 @@
           this.downloadBuffer = null;
           this.downloadedBytes = 0;
           this.totalBytes = 0;
-          this.chunkSize = 131072; // 默认128KB
+          this.chunkSize = 0; // 默认不分块
           this.isPaused = false;
           this.isCancelled = false;
           this.downloadStartTime = 0;
@@ -1083,8 +1084,17 @@
             
             // 边下载边解码的流式处理
             let currentByte = startByte;
-            let chunkIndex = Math.floor(startByte / this.chunkSize);
-            const totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+            let chunkIndex, totalChunks;
+            
+            // 处理不分块的情况
+            if (this.chunkSize === 0) {
+              chunkIndex = 0;
+              totalChunks = 1;
+            } else {
+              chunkIndex = Math.floor(startByte / this.chunkSize);
+              totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+            }
+            
             let decodeResult = null;
             let isDecodeComplete = false;
             
@@ -1096,7 +1106,15 @@
               
               if (this.isCancelled) break;
               
-              const endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+              // 计算结束字节位置
+              let endByte;
+              if (this.chunkSize === 0) {
+                // 不分块：下载整个文件
+                endByte = this.totalBytes - 1;
+              } else {
+                // 分块下载
+                endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+              }
               
               try {
                 // 下载单个分块
@@ -1280,8 +1298,16 @@
         async downloadFileInChunks(filename, startByte = 0) {
           const chunks = [];
           let currentByte = startByte;
-          let chunkIndex = Math.floor(startByte / this.chunkSize);
-          const totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+          let chunkIndex, totalChunks;
+          
+          // 处理不分块的情况
+          if (this.chunkSize === 0) {
+            chunkIndex = 0;
+            totalChunks = 1;
+          } else {
+            chunkIndex = Math.floor(startByte / this.chunkSize);
+            totalChunks = Math.ceil(this.totalBytes / this.chunkSize);
+          }
           
           while (currentByte < this.totalBytes && !this.isCancelled) {
             // 检查是否暂停
@@ -1291,7 +1317,15 @@
             
             if (this.isCancelled) break;
             
-            const endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+            // 计算结束字节位置
+            let endByte;
+            if (this.chunkSize === 0) {
+              // 不分块：下载整个文件
+              endByte = this.totalBytes - 1;
+            } else {
+              // 分块下载
+              endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
+            }
             
             try {
               const chunk = await this.downloadChunk(filename, currentByte, endByte);
@@ -1347,9 +1381,12 @@
          * 下载单个数据块
          */
         async downloadChunk(filename, startByte, endByte, retryCount = 0) {
-          const headers = {
-            'Range': `bytes=${startByte}-${endByte}`
-          };
+          const headers = {};
+          
+          // 只有在分块模式下才添加Range请求头
+          if (this.chunkSize > 0) {
+            headers['Range'] = `bytes=${startByte}-${endByte}`;
+          }
           
           if (this.authToken) {
             headers['Authorization'] = `Bearer ${this.authToken}`;
