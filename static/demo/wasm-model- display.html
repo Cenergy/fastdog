@@ -1064,14 +1064,20 @@
           this.updateStreamControlButtons(true, false, true);
           
           try {
-            this.updateProgress(5, '🌊 实时流式WASM: 获取文件信息...');
-            
-            // 获取文件大小和支持的范围请求
-            const fileInfo = await this.getFileInfo(filename);
-            this.totalBytes = fileInfo.size;
-            
-            this.updateStreamInfo(0, this.totalBytes, 0, '计算中...', 0, 0);
-            this.updateProgress(10, '🌊 实时流式WASM: 开始边下载边解码...');
+            // 不分块模式下跳过HEAD请求，直接开始下载
+            if (this.chunkSize === 0) {
+              this.totalBytes = 0; // 将在下载过程中获取
+              this.updateProgress(10, '🌊 实时流式WASM: 直接下载...');
+            } else {
+              this.updateProgress(5, '🌊 实时流式WASM: 获取文件信息...');
+              
+              // 获取文件大小和支持的范围请求
+              const fileInfo = await this.getFileInfo(filename);
+              this.totalBytes = fileInfo.size;
+              
+              this.updateStreamInfo(0, this.totalBytes, 0, '计算中...', 0, 0);
+              this.updateProgress(10, '🌊 实时流式WASM: 开始边下载边解码...');
+            }
             
             // 检查是否有断点续传数据
             const enableResume = document.getElementById('enableResume').checked;
@@ -1098,7 +1104,8 @@
             let decodeResult = null;
             let isDecodeComplete = false;
             
-            while (currentByte < this.totalBytes && !this.isCancelled && !isDecodeComplete) {
+            // 不分块模式下至少执行一次下载，分块模式下按totalBytes循环
+            while ((this.chunkSize === 0 ? !isDecodeComplete : currentByte < this.totalBytes) && !this.isCancelled && !isDecodeComplete) {
               // 检查是否暂停
               while (this.isPaused && !this.isCancelled) {
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -1109,8 +1116,8 @@
               // 计算结束字节位置
               let endByte;
               if (this.chunkSize === 0) {
-                // 不分块：下载整个文件
-                endByte = this.totalBytes - 1;
+                // 不分块：下载整个文件，不设置endByte（在downloadChunk中处理）
+                endByte = this.totalBytes > 0 ? this.totalBytes - 1 : undefined;
               } else {
                 // 分块下载
                 endByte = Math.min(currentByte + this.chunkSize - 1, this.totalBytes - 1);
@@ -1134,7 +1141,7 @@
                 chunkIndex++;
                 
                 // 更新进度 - 下载进度占50%，解码进度占40%
-                const downloadProgress = (this.downloadedBytes / this.totalBytes) * 50;
+                const downloadProgress = this.totalBytes > 0 ? (this.downloadedBytes / this.totalBytes) * 50 : 25;
                 const decodeProgress = streamResult.progress * 40;
                 const totalProgress = 10 + downloadProgress + decodeProgress;
                 
@@ -1143,7 +1150,7 @@
                 const remainingTime = this.calculateRemainingTime(speed);
                 
                 // 添加请求间隔延迟以避免触发限流
-                if (currentByte < this.totalBytes) {
+                if (this.chunkSize === 0 ? !streamResult.is_complete : currentByte < this.totalBytes) {
                   await new Promise(resolve => setTimeout(resolve, 50)); // 50ms延迟
                 }
                 
@@ -1159,10 +1166,10 @@
                     final_progress: streamResult.progress
                   });
                 } else {
-                  this.updateProgress(
-                    totalProgress, 
-                    `🌊 实时流式WASM: 下载并解码中... ${this.formatBytes(this.downloadedBytes)}/${this.formatBytes(this.totalBytes)} (解码进度: ${(streamResult.progress * 100).toFixed(1)}%)`
-                  );
+                  const progressText = this.totalBytes > 0 
+                    ? `🌊 实时流式WASM: 下载并解码中... ${this.formatBytes(this.downloadedBytes)}/${this.formatBytes(this.totalBytes)} (解码进度: ${(streamResult.progress * 100).toFixed(1)}%)`
+                    : `🌊 实时流式WASM: 下载并解码中... ${this.formatBytes(this.downloadedBytes)} (解码进度: ${(streamResult.progress * 100).toFixed(1)}%)`;
+                  this.updateProgress(totalProgress, progressText);
                 }
                 
                 this.updateStreamInfo(
@@ -1406,6 +1413,15 @@
             
             if (!response.ok) {
               throw new Error(`下载分块失败: ${response.status}`);
+            }
+            
+            // 在不分块模式下，从响应头获取文件大小
+            if (this.chunkSize === 0 && this.totalBytes === 0) {
+              const contentLength = response.headers.get('content-length');
+              if (contentLength) {
+                this.totalBytes = parseInt(contentLength);
+                console.log(`📏 获取文件大小: ${this.formatBytes(this.totalBytes)}`);
+              }
             }
             
             return await response.arrayBuffer();
