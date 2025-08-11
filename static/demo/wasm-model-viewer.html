@@ -521,6 +521,12 @@
           this.authToken = null;
           this.wasmDecoder = null;
           
+          // 模型选项数组
+          this.modelOptions = [
+            { name: "merge.gltf", uuid: "6095d16861df42b8ab03e5726f998f00" },
+            { name: "Bee.glb", uuid: "c8641cafccc5431f9e70500b1ff71d67" }
+          ];
+          
           // 流式加载相关属性
           this.streamController = null;
           this.downloadBuffer = null;
@@ -608,6 +614,12 @@
             document.querySelector('[data-method="stream"]').classList.add('active');
             document.querySelector('[data-method="wasm"]').classList.remove('active');
           }
+        }
+
+        // 根据模型名称获取UUID的函数
+        getUuidByName(modelName) {
+          const model = this.modelOptions.find(option => option.name === modelName);
+          return model ? model.uuid : null;
         }
 
         async login() {
@@ -828,7 +840,11 @@
             // const response = await fetch(`/api/v1/resources/models/${filename}/binary`, {
             //   headers
             // });
-            const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+            const modelUuid = this.getUuidByName(filename);
+            if (!modelUuid) {
+              throw new Error(`未找到模型 ${filename} 的UUID`);
+            }
+            const response = await fetch(`/api/v1/resources/models/uuid/${modelUuid}`, {
               headers
             });
 
@@ -1254,7 +1270,12 @@
             headers['Authorization'] = `Bearer ${this.authToken}`;
           }
           
-          const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+          const modelUuid = this.getUuidByName(filename);
+          if (!modelUuid) {
+            throw new Error(`未找到模型 ${filename} 的UUID`);
+          }
+          
+          const response = await fetch(`/api/v1/resources/models/uuid/${modelUuid}`, {
             method: 'HEAD',
             headers
           });
@@ -1373,7 +1394,12 @@
           }
           
           try {
-            const response = await fetch(`/api/v1/resources/models/uuid/0663fbe59481425dbc5bf18116f4cf8f`, {
+            const modelUuid = this.getUuidByName(filename);
+            if (!modelUuid) {
+              throw new Error(`未找到模型 ${filename} 的UUID`);
+            }
+            
+            const response = await fetch(`/api/v1/resources/models/uuid/${modelUuid}`, {
               headers
             });
             
