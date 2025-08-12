@@ -26,9 +26,9 @@ class WASMModelLoader {
                 console.warn('⚠️ WASM模块未找到，使用JavaScript解码器');
                 this.wasmModule = {
                     // 模拟WASM接口
-                    decodeBinary: (data) => {
+                    decodeBinary: (data, version = 1) => {
                         // 简单的解压缩实现
-                        return this.fallbackDecode(data);
+                        return this.fallbackDecode(data, version);
                     }
                 };
             }
@@ -44,7 +44,7 @@ class WASMModelLoader {
     /**
      * 备用JavaScript解码器
      */
-    fallbackDecode(arrayBuffer) {
+    fallbackDecode(arrayBuffer, version = 1) {
         try {
             const view = new DataView(arrayBuffer);
             
@@ -90,9 +90,18 @@ class WASMModelLoader {
                     const decompressed = pako.inflate(uint8Data);
                     console.log('✅ 标准zlib解压成功');
                     
-                    const result = new TextDecoder().decode(decompressed);
-                    console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
-                    return result;
+                    if (version === 1) {
+                        // 版本1是GLTF JSON格式
+                        const result = new TextDecoder().decode(decompressed);
+                        console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
+                        return result;
+                    } else if (version === 2) {
+                        // 版本2是GLB二进制格式
+                        console.log(`✅ 解压缩完成，得到 ${decompressed.byteLength} 字节的GLB数据`);
+                        return decompressed.buffer;
+                    } else {
+                        throw new Error(`不支持的版本号: ${version}`);
+                    }
                 } catch (error) {
                     console.error('所有解压缩方法都失败:', error);
                     throw new Error(`解压缩失败: ${error.message}`);
@@ -370,8 +379,13 @@ class WASMModelLoader {
             // 使用解码器解压缩
             if (this.wasmModule && this.wasmModule.decodeBinary) {
                 // 使用WASM或JavaScript解码器
-                const result = this.wasmModule.decodeBinary(arrayBuffer);
-                return JSON.parse(result);
+                const result = this.wasmModule.decodeBinary(arrayBuffer, version);
+                if (version === 1) {
+                    return JSON.parse(result);
+                } else if (version === 2) {
+                    // 版本2是GLB格式，返回ArrayBuffer
+                    return result;
+                }
             } else {
                 // 直接使用pako库解压缩
                 if (typeof pako !== 'undefined') {
@@ -392,9 +406,18 @@ class WASMModelLoader {
                         const decompressed = pako.inflate(uint8Data);
                         console.log('✅ 标准zlib解压成功');
                         
-                        const result = new TextDecoder().decode(decompressed);
-                        console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
-                        return JSON.parse(result);
+                        if (version === 1) {
+                            // 版本1是GLTF JSON格式
+                            const result = new TextDecoder().decode(decompressed);
+                            console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
+                            return JSON.parse(result);
+                        } else if (version === 2) {
+                            // 版本2是GLB二进制格式
+                            console.log(`✅ 解压缩完成，得到 ${decompressed.byteLength} 字节的GLB数据`);
+                            return decompressed.buffer;
+                        } else {
+                            throw new Error(`不支持的版本号: ${version}`);
+                        }
                     } catch (error) {
                         console.error('解压缩失败:', error);
                         throw new Error(`解压缩失败: ${error.message}`);
@@ -434,24 +457,36 @@ class WASMModelLoader {
      */
     async convertToThreeModel(gltfData) {
         try {
-            // 检查是否有GLTFLoader可用
-            if (typeof window !== 'undefined' && window.GLTFLoader) {
-                return await this.loadCompleteModelWithGLTFLoader(gltfData);
+            // 检查数据类型
+            if (gltfData instanceof ArrayBuffer) {
+                // GLB二进制数据
+                console.log('🔧 处理GLB二进制数据');
+                if (typeof window !== 'undefined' && window.GLTFLoader) {
+                    return await this.loadGLBFromArrayBuffer(gltfData);
+                } else {
+                    throw new Error('GLTFLoader不可用，无法加载GLB数据');
+                }
+            } else {
+                // GLTF JSON数据
+                console.log('🔧 处理GLTF JSON数据');
+                if (typeof window !== 'undefined' && window.GLTFLoader) {
+                    return await this.loadCompleteModelWithGLTFLoader(gltfData);
+                }
+                
+                // 降级到完整的GLTF解析
+                const geometry = this.parseGLTFData(gltfData);
+                const material = new window.THREE.MeshStandardMaterial({
+                    color: 0x667eea,
+                    metalness: 0.3,
+                    roughness: 0.4,
+                });
+                const model = new window.THREE.Mesh(geometry, material);
+                
+                return {
+                    model: model,
+                    geometry: geometry
+                };
             }
-            
-            // 降级到完整的GLTF解析
-            const geometry = this.parseGLTFData(gltfData);
-            const material = new window.THREE.MeshStandardMaterial({
-                color: 0x667eea,
-                metalness: 0.3,
-                roughness: 0.4,
-            });
-            const model = new window.THREE.Mesh(geometry, material);
-            
-            return {
-                model: model,
-                geometry: geometry
-            };
             
         } catch (error) {
             console.error('转换Three.js模型失败:', error);
@@ -552,6 +587,59 @@ class WASMModelLoader {
                     }
                 );
             } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    /**
+     * 使用GLTFLoader加载GLB二进制数据
+     */
+    async loadGLBFromArrayBuffer(arrayBuffer) {
+        return new Promise((resolve, reject) => {
+            try {
+                console.log('🔧 加载GLB ArrayBuffer数据，大小:', arrayBuffer.byteLength);
+                
+                // 直接从ArrayBuffer创建Blob URL，使用正确的GLB MIME类型
+                const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+                const url = URL.createObjectURL(blob);
+                
+                const loader = new window.GLTFLoader();
+                loader.load(
+                    url,
+                    (gltf) => {
+                        // 清理Blob URL
+                        URL.revokeObjectURL(url);
+                        console.log('✅ GLB模型加载成功');
+                        
+                        // 提取第一个几何体用于向后兼容
+                        let geometry = null;
+                        gltf.scene.traverse((child) => {
+                            if (child.isMesh && child.geometry && !geometry) {
+                                geometry = child.geometry;
+                            }
+                        });
+                        
+                        if (!geometry) {
+                            // 如果没有找到几何体，创建一个默认的
+                            geometry = new window.THREE.BoxGeometry(1, 1, 1);
+                        }
+                        
+                        // 返回完整的模型和几何体
+                        resolve({
+                            model: gltf.scene,
+                            geometry: geometry
+                        });
+                    },
+                    undefined,
+                    (error) => {
+                        URL.revokeObjectURL(url);
+                        console.error('❌ GLB模型加载失败:', error);
+                        reject(error);
+                    }
+                );
+            } catch (error) {
+                console.error('❌ 创建GLB Blob失败:', error);
                 reject(error);
             }
         });
