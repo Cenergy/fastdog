@@ -1644,13 +1644,31 @@
               
               const loader = new GLTFLoader();
               
-              // 确保数据格式正确：GLTFLoader.parse需要JSON字符串或JSON对象
+              // 确保数据格式正确：GLTFLoader.parse支持JSON字符串、JSON对象或ArrayBuffer（GLB）
                let dataToParse;
-               if (typeof gltfData === 'string') {
+               if (gltfData instanceof ArrayBuffer) {
+                 // 如果是ArrayBuffer（GLB格式），直接使用
+                 dataToParse = gltfData;
+                 console.log('📊 检测到GLB二进制数据，大小:', gltfData.byteLength, '字节');
+               } else if (typeof gltfData === 'object' && gltfData !== null && gltfData.type === 'glb' && gltfData.data) {
+                 // 如果是WASM解码器返回的GLB对象格式，需要将base64数据转换为ArrayBuffer
+                 console.log('📊 检测到WASM解码器GLB对象格式，转换base64数据');
+                 try {
+                   const binaryString = atob(gltfData.data);
+                   const bytes = new Uint8Array(binaryString.length);
+                   for (let i = 0; i < binaryString.length; i++) {
+                     bytes[i] = binaryString.charCodeAt(i);
+                   }
+                   dataToParse = bytes.buffer;
+                   console.log('📊 GLB数据转换完成，大小:', dataToParse.byteLength, '字节');
+                 } catch (error) {
+                   throw new Error('GLB base64数据解码失败: ' + error.message);
+                 }
+               } else if (typeof gltfData === 'string') {
                  // 如果是字符串，直接使用
                  dataToParse = gltfData;
                } else if (typeof gltfData === 'object' && gltfData !== null) {
-                 // 如果是对象，转换为JSON字符串
+                 // 如果是普通对象，转换为JSON字符串
                  dataToParse = JSON.stringify(gltfData);
                } else {
                  throw new Error('无效的GLTF数据格式');
