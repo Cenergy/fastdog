@@ -504,11 +504,13 @@
       import * as THREE from "https://unpkg.com/three@0.118.0/build/three.module.js";
       import { OrbitControls } from "https://unpkg.com/three@0.118.0/examples/jsm/controls/OrbitControls.js";
       import { GLTFLoader } from "https://unpkg.com/three@0.118.0/examples/jsm/loaders/GLTFLoader.js";
+      import { FBXLoader } from "https://unpkg.com/three@0.118.0/examples/jsm/loaders/FBXLoader.js";
 
       // 将THREE添加到全局作用域，以便其他脚本使用
       window.THREE = THREE;
       window.OrbitControls = OrbitControls;
       window.GLTFLoader = GLTFLoader;
+      window.FBXLoader = FBXLoader;
       class ModelViewer {
         constructor() {
           this.scene = null;
@@ -1554,10 +1556,10 @@
           }
           
           // 验证文件格式
-          const validExtensions = ['.glb', '.gltf'];
+          const validExtensions = ['.glb', '.gltf', '.fbx'];
           const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
           if (!validExtensions.includes(fileExtension)) {
-            alert("请选择有效的模型文件格式 (.glb 或 .gltf)");
+            alert("请选择有效的模型文件格式 (.glb, .gltf 或 .fbx)");
             return;
           }
 
@@ -1567,23 +1569,41 @@
           try {
             this.updateProgress(0, "开始加载原始模型...");
 
-            // 直接加载GLB/GLTF文件
-            const loader = new GLTFLoader();
+            // 根据文件格式选择合适的加载器
             const modelUrl = `../models/${filename}`;
+            let model;
             
             this.updateProgress(50, "下载模型文件中...");
             
-            const gltf = await new Promise((resolve, reject) => {
-              loader.load(
-                modelUrl,
-                (gltf) => resolve(gltf),
-                (progress) => {
-                  const percentage = (progress.loaded / progress.total) * 100;
-                  this.updateProgress(percentage, "下载中...");
-                },
-                (error) => reject(error)
-              );
-            });
+            if (fileExtension === '.fbx') {
+              // 加载FBX文件
+              const loader = new FBXLoader();
+              model = await new Promise((resolve, reject) => {
+                loader.load(
+                  modelUrl,
+                  (fbx) => resolve({ scene: fbx }),
+                  (progress) => {
+                    const percentage = (progress.loaded / progress.total) * 100;
+                    this.updateProgress(percentage, "下载中...");
+                  },
+                  (error) => reject(error)
+                );
+              });
+            } else {
+              // 加载GLB/GLTF文件
+              const loader = new GLTFLoader();
+              model = await new Promise((resolve, reject) => {
+                loader.load(
+                  modelUrl,
+                  (gltf) => resolve(gltf),
+                  (progress) => {
+                    const percentage = (progress.loaded / progress.total) * 100;
+                    this.updateProgress(percentage, "下载中...");
+                  },
+                  (error) => reject(error)
+                );
+              });
+            }
 
             this.updateProgress(100, "加载完成!");
 
@@ -1593,7 +1613,7 @@
             }
 
             // 添加新模型
-            this.currentModel = gltf.scene;
+            this.currentModel = model.scene;
             this.currentModel.castShadow = true;
             this.currentModel.receiveShadow = true;
             
