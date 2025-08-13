@@ -106,36 +106,6 @@ def detect_file_type_from_data(data: bytes) -> str:
         return ".bin"  # 最终默认值
 
 
-def parse_glb_to_gltf(glb_data: bytes) -> dict:
-    """解析GLB二进制文件为GLTF JSON数据"""
-    if len(glb_data) < 12:
-        raise ValueError("GLB文件太小，无法解析")
-    
-    # 读取GLB文件头
-    magic = glb_data[:4]
-    if magic != b'glTF':
-        raise ValueError("不是有效的GLB文件")
-    
-    version = struct.unpack('<I', glb_data[4:8])[0]
-    if version != 2:
-        raise ValueError(f"不支持的GLB版本: {version}")
-    
-    length = struct.unpack('<I', glb_data[8:12])[0]
-    
-    # 读取JSON chunk
-    offset = 12
-    json_chunk_length = struct.unpack('<I', glb_data[offset:offset+4])[0]
-    json_chunk_type = glb_data[offset+4:offset+8]
-    
-    if json_chunk_type != b'JSON':
-        raise ValueError("GLB文件格式错误：缺少JSON chunk")
-    
-    json_data = glb_data[offset+8:offset+8+json_chunk_length]
-    gltf_json = json.loads(json_data.decode('utf-8'))
-    
-    return gltf_json
-
-
 def convert_model_to_binary(model_data: bytes, file_ext: str) -> bytes:
     """将各种3D模型格式转换为自定义二进制格式"""
     if file_ext == ".gltf":
