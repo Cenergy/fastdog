@@ -11,10 +11,99 @@ import json
 import struct
 import zlib
 import io
+import magic
 from datetime import datetime
 from typing import List
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
+
+
+def detect_file_type_from_data(data: bytes) -> str:
+    """使用python-magic检测文件类型并返回合适的扩展名"""
+    try:
+        # 使用magic检测MIME类型
+        mime_type = magic.from_buffer(data, mime=True)
+        file_description = magic.from_buffer(data)
+        
+        # 图片文件类型映射
+        if mime_type == "image/jpeg":
+            return ".jpg"
+        elif mime_type == "image/png":
+            return ".png"
+        elif mime_type == "image/gif":
+            return ".gif"
+        elif mime_type == "image/webp":
+            return ".webp"
+        
+        # JSON格式检测
+        elif mime_type == "application/json" or "JSON" in file_description:
+            # 检查是否为GLTF JSON格式
+            try:
+                text_data = data.decode('utf-8')
+                if '"asset"' in text_data and ('"scene' in text_data or '"nodes"' in text_data):
+                    return ".gltf"
+            except:
+                pass
+            return ".json"
+        
+        # 二进制文件检测
+        elif mime_type == "application/octet-stream" or "data" in mime_type:
+            # 检查GLB文件魔数
+            if data.startswith(b'glTF'):
+                return ".glb"
+            # 检查FBX文件魔数
+            elif data.startswith(b'Kaydara FBX Binary') or b'FBX' in data[:100]:
+                return ".fbx"
+            # 检查OBJ文件特征（通常以文本开头）
+            elif b'v ' in data[:100] or b'f ' in data[:100] or b'vn ' in data[:100]:
+                return ".obj"
+            # 检查是否为fastdog格式（自定义二进制格式）
+            elif b'FASTDOG' in data[:20]:
+                return ".fastdog"
+            else:
+                return ".bin"
+        
+        # 文本格式检测
+        elif "text" in mime_type:
+            try:
+                text_data = data.decode('utf-8')
+                if '"asset"' in text_data and ('"scene' in text_data or '"nodes"' in text_data):
+                    return ".gltf"
+                elif any(line.strip().startswith(('v ', 'f ', 'vn ', 'vt ', 'o ', 'g ')) for line in text_data.split('\n')[:10]):
+                    return ".obj"
+            except:
+                pass
+            return ".txt"
+        
+        # 其他MIME类型的处理
+        elif "gltf" in mime_type.lower():
+            return ".gltf"
+        elif "glb" in mime_type.lower():
+            return ".glb"
+        elif "fbx" in mime_type.lower():
+            return ".fbx"
+        elif "obj" in mime_type.lower():
+            return ".obj"
+        else:
+            return ".bin"
+        
+    except Exception as e:
+        # 如果magic检测失败，回退到简单的文件头检测
+        if data.startswith(b'glTF'):
+            return ".glb"
+        elif data.startswith(b'Kaydara FBX Binary') or b'FBX' in data[:100]:
+            return ".fbx"
+        # 图片文件的简单检测
+        elif data.startswith(b'\xff\xd8\xff'):
+            return ".jpg"
+        elif data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return ".png"
+        elif data.startswith(b'GIF8'):
+            return ".gif"
+        elif data.startswith(b'RIFF') and b'WEBP' in data[:12]:
+            return ".webp"
+        
+        return ".bin"  # 最终默认值
 
 
 def parse_glb_to_gltf(glb_data: bytes) -> dict:
@@ -382,20 +471,24 @@ class Model3DAdmin(TortoiseModelAdmin):
                             match = re.match(base64_pattern, file)
                             
                             if match:
-                                file_type = match.group(1)
                                 base64_data = match.group(2)
                                 
-                                # 检查文件类型
-                                if file_type not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
-                                    raise ValueError(f"缩略图不支持的格式: {file_type}")
-                                    
-                                # 使用模型UUID生成文件名
-                                unique_filename = f"{str(model_uuid)}.{file_type}"
-                                file_path = os.path.join(upload_dir, unique_filename)
-                                
                                 try:
-                                    # 解码base64并保存文件
+                                    # 解码base64数据
                                     image_data = base64.b64decode(base64_data)
+                                    
+                                    # 使用python-magic检测文件类型
+                                    file_ext = detect_file_type_from_data(image_data)
+                                    
+                                    # 验证缩略图格式
+                                    if file_ext not in [".jpg", ".png", ".gif", ".webp"]:
+                                        raise ValueError(f"缩略图不支持的格式: {file_ext}")
+                                    
+                                    # 使用模型UUID生成文件名
+                                    unique_filename = f"{str(model_uuid)}{file_ext}"
+                                    file_path = os.path.join(upload_dir, unique_filename)
+                                    
+                                    # 保存文件
                                     with open(file_path, "wb") as f:
                                         f.write(image_data)
                                         f.flush()
@@ -405,7 +498,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                                     payload[field_name] = f"/static/uploads/models/{unique_filename}"
                                     
                                 except Exception as e:
-                                    raise ValueError("无效的base64图片数据")
+                                    raise ValueError(f"无效的base64图片数据: {str(e)}")
                             else:
                                 raise ValueError("无效的base64图片格式")
                         else:
@@ -415,66 +508,33 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 if len(file) > 50 * 1024 * 1024:  # 50MB限制
                                     raise ValueError(f"文件过大({len(file)}字符)，建议不超过30MB，请使用文件上传方式")
                                 
-                                # 尝试解析base64数据
+                                # 解析base64数据
                                 if file.startswith('data:'):
                                     # 处理带MIME类型的base64
                                     header, base64_data = file.split(',', 1)
-                                    # 从header中提取文件扩展名
-                                    if 'gltf' in header.lower():
-                                        file_ext = '.gltf'
-                                    elif 'glb' in header.lower():
-                                        file_ext = '.glb'
-                                    elif 'obj' in header.lower():
-                                        file_ext = '.obj'
-                                    elif 'fbx' in header.lower():
-                                        file_ext = '.fbx'
-                                    elif 'application/json' in header.lower():
-                                        # JSON格式，可能是gltf
-                                        file_ext = '.gltf'
-                                    elif 'octet-stream' in header.lower():
-                                        # 对于 octet-stream，尝试从文件内容判断类型
-                                        try:
-                                            # 解码一小部分数据来检测文件类型
-                                            sample_data = base64.b64decode(base64_data[:200])  # 取前200个字符解码
-                                            
-                                            # 检查 GLB 文件魔数 (glTF)
-                                            if sample_data.startswith(b'glTF'):
-                                                file_ext = '.glb'
-                                            else:
-                                                # 尝试解码为文本检查是否为 gltf JSON
-                                                try:
-                                                    sample_text = sample_data.decode('utf-8')
-                                                    # 更严格的 gltf JSON 检测
-                                                    if (sample_text.strip().startswith('{') and 
-                                                        ('"asset"' in sample_text or '"scene' in sample_text or '"nodes"' in sample_text)):
-                                                        file_ext = '.gltf'
-                                                    else:
-                                                        file_ext = '.bin'
-                                                except UnicodeDecodeError:
-                                                    file_ext = '.bin'  # 无法解码为文本，是二进制文件
-                                        except:
-                                            file_ext = '.bin'  # 解码失败，默认为二进制文件
-                                    else:
-                                        file_ext = '.bin'  # 默认为二进制文件
                                 else:
-                                    # 纯base64数据，默认为二进制文件
+                                    # 纯base64数据
                                     base64_data = file
-                                    file_ext = '.bin'
                                 
-                                # 验证base64文件格式
+                                # 解码base64数据
+                                model_data = base64.b64decode(base64_data)
+                                
+                                # 使用python-magic检测文件类型
+                                file_ext = detect_file_type_from_data(model_data)
+                                
+                                # 验证文件格式
                                 if field_name == "model_file_url":
                                     if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
                                         raise ValueError(f"模型文件不支持的格式: {file_ext}")
                                 elif field_name == "binary_file_url":
-                                    if file_ext not in [".bin", ".glb"]:
+                                    if file_ext not in [".bin", ".glb", ".fastdog"]:
                                         raise ValueError(f"二进制文件不支持的格式: {file_ext}")
                                 
                                 # 使用模型UUID生成文件名
                                 unique_filename = f"{str(model_uuid)}{file_ext}"
                                 file_path = os.path.join(upload_dir, unique_filename)
                                 
-                                # 解码base64并保存文件
-                                model_data = base64.b64decode(base64_data)
+                                # 保存文件
                                 with open(file_path, "wb") as f:
                                     f.write(model_data)
                                     f.flush()
