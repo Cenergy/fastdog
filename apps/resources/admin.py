@@ -75,7 +75,9 @@ def detect_file_type_from_data(data: bytes) -> str:
                 pass
             return ".txt"
         
-        # 其他MIME类型的处理
+        # 3D模型文件的MIME类型处理
+        elif "gltf-binary" in mime_type.lower() or "model/gltf-binary" in mime_type.lower():
+            return ".glb"
         elif "gltf" in mime_type.lower():
             return ".gltf"
         elif "glb" in mime_type.lower():

@@ -345,7 +345,7 @@
             <select id="modelSelect">
               <option value="merge.gltf">merge.gltf</option>
               <option value="Bee.glb">Bee.glb</option>
-              <option value="file.fbx">file.fbx</option>
+              <option value="SambaDancing.fbx">SambaDancing.fbx</option>
             </select>
           </div>
         </div>
@@ -526,9 +526,9 @@
           
           // 模型选项数组
           this.modelOptions = [
-            { name: "merge.gltf", uuid: "521bb78a08164f8d976ca35f9a02bc25" },
-            { name: "Bee.glb", uuid: "be4c2a1dfc4d4c0abfa6b0762a9087f8" },
-            { name: "file.fbx", uuid: "d6827f8b73c94031948b073f3d85db33" },
+            { name: "merge.gltf", uuid: "326868cfb53e44f1a9b418a05044fc2f" },
+            { name: "Bee.glb", uuid: "f2c992a231c74dcc86e5e7c63b8b1eb5" },
+            { name: "SambaDancing.fbx", uuid: "73e872d4b0f54075859cefb9eda2eb54" },
           ];
           
           // 流式加载相关属性
@@ -1655,28 +1655,114 @@
         }
 
         /**
-         * 使用GLTFLoader构建完整模型（与Stream方式保持一致）
+         * 使用GLTFLoader或FBXLoader构建完整模型（支持多种格式）
          */
-        async buildModelWithGLTFLoader(gltfData) {
+        async buildModelWithGLTFLoader(modelData) {
           return new Promise((resolve, reject) => {
             try {
-              console.log('🎨 使用GLTFLoader直接解析GLTF数据（无需Blob URL）- WASM方式');
-              console.log('📊 传入数据类型:', typeof gltfData);
-              console.log('📊 传入数据内容:', gltfData);
+              console.log('🎨 开始解析模型数据');
+              console.log('📊 传入数据类型:', typeof modelData);
+              console.log('📊 传入数据内容:', modelData);
               
+              // 检测数据格式
+              // 首先检查是否包含原始格式数据（FBX等）
+              if (typeof modelData === 'object' && modelData !== null && modelData.extensions && modelData.extensions.FASTDOG_ORIGINAL_FORMAT) {
+                const originalFormat = modelData.extensions.FASTDOG_ORIGINAL_FORMAT;
+                console.log(`🔧 检测到原始格式: ${originalFormat.format}`);
+                
+                if (originalFormat.format === '.fbx' && typeof window !== 'undefined' && window.FBXLoader) {
+                  console.log('📊 检测到FBX格式，使用FBXLoader');
+                  try {
+                    const binaryString = atob(originalFormat.data);
+                    const arrayBuffer = new ArrayBuffer(binaryString.length);
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < binaryString.length; i++) {
+                      uint8Array[i] = binaryString.charCodeAt(i);
+                    }
+                    
+                    const loader = new FBXLoader();
+                    const fbxModel = loader.parse(arrayBuffer, '');
+                    
+                    console.log('✅ FBXLoader解析成功');
+                    
+                    // 提取第一个几何体用于向后兼容
+                    let geometry = null;
+                    fbxModel.traverse((child) => {
+                      if (child.isMesh && child.geometry && !geometry) {
+                        geometry = child.geometry;
+                      }
+                    });
+                    
+                    if (!geometry) {
+                      geometry = new THREE.BoxGeometry(1, 1, 1);
+                    }
+                    
+                    resolve({
+                      model: fbxModel,
+                      geometry: geometry
+                    });
+                    return;
+                  } catch (error) {
+                    throw new Error('FBX数据解析失败: ' + error.message);
+                  }
+                } else {
+                  throw new Error(`不支持的原始格式: ${originalFormat.format} 或缺少相应的加载器`);
+                }
+              }
+              
+              // 检查直接的FBX格式标识
+              if (typeof modelData === 'object' && modelData !== null && modelData.type === 'fbx' && modelData.data) {
+                // FBX格式处理
+                console.log('📊 检测到直接FBX格式，使用FBXLoader');
+                try {
+                  const binaryString = atob(modelData.data);
+                  const arrayBuffer = new ArrayBuffer(binaryString.length);
+                  const uint8Array = new Uint8Array(arrayBuffer);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    uint8Array[i] = binaryString.charCodeAt(i);
+                  }
+                  
+                  const loader = new FBXLoader();
+                  const fbxModel = loader.parse(arrayBuffer, '');
+                  
+                  console.log('✅ FBXLoader解析成功');
+                  
+                  // 提取第一个几何体用于向后兼容
+                  let geometry = null;
+                  fbxModel.traverse((child) => {
+                    if (child.isMesh && child.geometry && !geometry) {
+                      geometry = child.geometry;
+                    }
+                  });
+                  
+                  if (!geometry) {
+                    geometry = new THREE.BoxGeometry(1, 1, 1);
+                  }
+                  
+                  resolve({
+                    model: fbxModel,
+                    geometry: geometry
+                  });
+                  return;
+                } catch (error) {
+                  throw new Error('FBX数据解析失败: ' + error.message);
+                }
+              }
+              
+              // GLTF/GLB格式处理
               const loader = new GLTFLoader();
               
               // 确保数据格式正确：GLTFLoader.parse支持JSON字符串、JSON对象或ArrayBuffer（GLB）
                let dataToParse;
-               if (gltfData instanceof ArrayBuffer) {
+               if (modelData instanceof ArrayBuffer) {
                  // 如果是ArrayBuffer（GLB格式），直接使用
-                 dataToParse = gltfData;
-                 console.log('📊 检测到GLB二进制数据，大小:', gltfData.byteLength, '字节');
-               } else if (typeof gltfData === 'object' && gltfData !== null && gltfData.type === 'glb' && gltfData.data) {
+                 dataToParse = modelData;
+                 console.log('📊 检测到GLB二进制数据，大小:', modelData.byteLength, '字节');
+               } else if (typeof modelData === 'object' && modelData !== null && modelData.type === 'glb' && modelData.data) {
                  // 如果是WASM解码器返回的GLB对象格式，需要将base64数据转换为ArrayBuffer
                  console.log('📊 检测到WASM解码器GLB对象格式，转换base64数据');
                  try {
-                   const binaryString = atob(gltfData.data);
+                   const binaryString = atob(modelData.data);
                    const bytes = new Uint8Array(binaryString.length);
                    for (let i = 0; i < binaryString.length; i++) {
                      bytes[i] = binaryString.charCodeAt(i);
@@ -1686,14 +1772,14 @@
                  } catch (error) {
                    throw new Error('GLB base64数据解码失败: ' + error.message);
                  }
-               } else if (typeof gltfData === 'string') {
+               } else if (typeof modelData === 'string') {
                  // 如果是字符串，直接使用
-                 dataToParse = gltfData;
-               } else if (typeof gltfData === 'object' && gltfData !== null) {
+                 dataToParse = modelData;
+               } else if (typeof modelData === 'object' && modelData !== null) {
                  // 如果是普通对象，转换为JSON字符串
-                 dataToParse = JSON.stringify(gltfData);
+                 dataToParse = JSON.stringify(modelData);
                } else {
-                 throw new Error('无效的GLTF数据格式');
+                 throw new Error('无效的模型数据格式');
                }
                
                console.log('📊 解析数据类型:', typeof dataToParse);
@@ -1703,7 +1789,7 @@
                  dataToParse, // 传入正确格式的数据
                 '', // 资源路径（空字符串表示无外部资源）
                 (gltf) => {
-                  console.log('✅ GLTFLoader直接解析成功，保留完整材质 - WASM方式');
+                  console.log('✅ GLTFLoader直接解析成功，保留完整材质');
                   
                   // 提取第一个几何体用于向后兼容
                   let geometry = null;
@@ -1725,7 +1811,7 @@
                   });
                 },
                 (error) => {
-                  console.error('❌ GLTFLoader直接解析失败 - WASM方式:', error);
+                  console.error('❌ GLTFLoader直接解析失败:', error);
                   reject(error);
                 }
               );
