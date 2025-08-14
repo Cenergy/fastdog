@@ -469,6 +469,19 @@ class WASMModelLoader {
             } else {
                 // GLTF JSON数据
                 console.log('🔧 处理GLTF JSON数据');
+                
+                // 检查是否包含原始格式数据（FBX等）
+                if (gltfData.extensions && gltfData.extensions.FASTDOG_ORIGINAL_FORMAT) {
+                    const originalFormat = gltfData.extensions.FASTDOG_ORIGINAL_FORMAT;
+                    console.log(`🔧 检测到原始格式: ${originalFormat.format}`);
+                    
+                    if (originalFormat.format === '.fbx' && typeof window !== 'undefined' && window.FBXLoader) {
+                        return await this.loadFBXFromBase64(originalFormat.data);
+                    } else {
+                        throw new Error(`不支持的原始格式: ${originalFormat.format} 或缺少相应的加载器`);
+                    }
+                }
+                
                 if (typeof window !== 'undefined' && window.GLTFLoader) {
                     return await this.loadCompleteModelWithGLTFLoader(gltfData);
                 }
@@ -492,6 +505,53 @@ class WASMModelLoader {
             console.error('转换Three.js模型失败:', error);
             throw error;
         }
+    }
+
+    /**
+     * 从base64编码的FBX数据加载模型
+     */
+    async loadFBXFromBase64(base64Data) {
+        return new Promise((resolve, reject) => {
+            try {
+                console.log('🎨 使用FBXLoader加载FBX数据');
+                
+                // 将base64数据转换为ArrayBuffer
+                const binaryString = atob(base64Data);
+                const arrayBuffer = new ArrayBuffer(binaryString.length);
+                const uint8Array = new Uint8Array(arrayBuffer);
+                for (let i = 0; i < binaryString.length; i++) {
+                    uint8Array[i] = binaryString.charCodeAt(i);
+                }
+                
+                const loader = new window.FBXLoader();
+                const fbxModel = loader.parse(arrayBuffer, '');
+                
+                console.log('✅ FBXLoader加载成功');
+                
+                // 提取第一个几何体用于向后兼容
+                let geometry = null;
+                fbxModel.traverse((child) => {
+                    if (child.isMesh && child.geometry && !geometry) {
+                        geometry = child.geometry;
+                    }
+                });
+                
+                if (!geometry) {
+                    // 如果没有找到几何体，创建一个默认的
+                    geometry = new window.THREE.BoxGeometry(1, 1, 1);
+                }
+                
+                // 返回完整的模型和几何体
+                resolve({
+                    model: fbxModel,
+                    geometry: geometry
+                });
+                
+            } catch (error) {
+                console.error('❌ FBXLoader加载失败:', error);
+                reject(error);
+            }
+        });
     }
 
     /**
