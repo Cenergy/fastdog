@@ -161,6 +161,34 @@
       .info-value {
         color: #667eea;
       }
+      
+      .animation-controls {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+      }
+      
+      .animation-controls button {
+        flex: 1;
+        padding: 8px 12px;
+        background: #4a5568;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background-color 0.2s;
+      }
+      
+      .animation-controls button:hover {
+        background: #2d3748;
+      }
+      
+      .animation-controls button:disabled {
+        background: #2d3748;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
 
       #viewer {
         width: 100%;
@@ -455,6 +483,21 @@
             </div>
           </div>
         </div>
+        
+        <!-- 动画控制面板 -->
+        <div class="section" id="animationSection" style="display: none;">
+          <div class="section-title">🎬 动画控制</div>
+          <div class="info-panel" id="animationPanel">
+            <div class="info-item">
+              <span class="info-label">动画信息:</span>
+              <span class="info-value" id="animationInfo">无动画</span>
+            </div>
+            <div class="animation-controls">
+              <button id="playAnimationBtn">▶️ 播放</button>
+              <button id="stopAnimationBtn">⏹️ 停止</button>
+            </div>
+          </div>
+        </div>
 
         <!-- 性能统计面板 -->
         <div class="section">
@@ -548,6 +591,12 @@
             "/api/v1/resources",
             this.authToken
           );
+          
+          // 动画相关属性
+          this.animationMixer = null;
+          this.animationActions = [];
+          this.clock = new THREE.Clock();
+          this.isAnimationPlaying = false;
 
           this.init();
           this.setupEventListeners();
@@ -729,6 +778,14 @@
             .addEventListener("change", (e) => {
               this.chunkSize = parseInt(e.target.value);
             });
+            
+          // 动画控制按钮事件
+          document
+            .getElementById("playAnimationBtn")
+            .addEventListener("click", () => this.playAnimation(0));
+          document
+            .getElementById("stopAnimationBtn")
+            .addEventListener("click", () => this.stopAnimation());
 
           // 窗口大小调整
           window.addEventListener("resize", () => this.onWindowResize());
@@ -791,6 +848,9 @@
                 }
               });
               this.scene.add(this.currentModel);
+              
+              // 处理动画
+              this.setupAnimations(this.currentModel);
             } else if (result.geometry) {
               // 如果只有几何体，使用默认材质
               const material = new THREE.MeshStandardMaterial({
@@ -2751,8 +2811,96 @@
           this.renderer.setSize(window.innerWidth - 300, window.innerHeight);
         }
 
+        setupAnimations(model) {
+          // 清理之前的动画
+          if (this.animationMixer) {
+            this.animationMixer.stopAllAction();
+            this.animationMixer = null;
+          }
+          this.animationActions = [];
+          
+          // 检查模型是否有动画
+          if (model.animations && model.animations.length > 0) {
+            console.log('🎬 发现动画数据:', model.animations.length, '个动画');
+            
+            // 创建动画混合器
+            this.animationMixer = new THREE.AnimationMixer(model);
+            
+            // 为每个动画创建动作
+            model.animations.forEach((clip, index) => {
+              console.log(`🎭 动画 ${index + 1}: ${clip.name}, 时长: ${clip.duration.toFixed(2)}s`);
+              const action = this.animationMixer.clipAction(clip);
+              this.animationActions.push(action);
+            });
+            
+            // 自动播放第一个动画
+            if (this.animationActions.length > 0) {
+              this.playAnimation(0);
+            }
+            
+            // 更新UI显示动画信息
+            this.updateAnimationInfo(model.animations);
+          } else {
+             console.log('📝 该模型没有动画数据');
+             
+             // 隐藏动画控制面板
+             const animationSection = document.getElementById('animationSection');
+             if (animationSection) {
+               animationSection.style.display = 'none';
+             }
+           }
+        }
+        
+        playAnimation(index = 0) {
+          if (this.animationActions.length > index) {
+            // 停止所有动画
+            this.animationActions.forEach(action => action.stop());
+            
+            // 播放指定动画
+            const action = this.animationActions[index];
+            action.reset();
+            action.play();
+            this.isAnimationPlaying = true;
+            
+            console.log(`▶️ 播放动画: ${action.getClip().name}`);
+          }
+        }
+        
+        stopAnimation() {
+          if (this.animationMixer) {
+            this.animationActions.forEach(action => action.stop());
+            this.isAnimationPlaying = false;
+            console.log('⏹️ 停止动画');
+          }
+        }
+        
+        updateAnimationInfo(animations) {
+           const animationInfo = animations.map((clip, index) => 
+             `动画${index + 1}: ${clip.name} (${clip.duration.toFixed(2)}s)`
+           ).join('<br>');
+           
+           // 更新动画信息显示
+           const animationInfoElement = document.getElementById('animationInfo');
+           if (animationInfoElement) {
+             animationInfoElement.innerHTML = animationInfo;
+           }
+           
+           // 显示动画控制面板
+           const animationSection = document.getElementById('animationSection');
+           if (animationSection) {
+             animationSection.style.display = 'block';
+           }
+         }
+
         animate() {
           requestAnimationFrame(() => this.animate());
+          
+          // 更新动画混合器
+          if (this.animationMixer && this.isAnimationPlaying) {
+            const delta = this.clock.getDelta();
+            this.animationMixer.update(delta);
+          }
+          
           this.controls.update();
           this.renderer.render(this.scene, this.camera);
         }
