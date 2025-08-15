@@ -9,6 +9,16 @@ class WASMModelLoader {
         this.authToken = authToken;
         this.wasmModule = null;
         this.isWasmReady = false;
+        
+        // 性能监控配置
+        this.performanceConfig = {
+            enableLogging: true,
+            logPrefix: '⚡'
+        };
+        
+        // 缓存配置
+        this.cache = new Map();
+        this.maxCacheSize = 10;
     }
 
     /**
@@ -46,72 +56,28 @@ class WASMModelLoader {
      */
     fallbackDecode(arrayBuffer, version = 1) {
         try {
-            const view = new DataView(arrayBuffer);
+            // 使用统一的解析方法
+            const header = this.parseBinaryHeader(arrayBuffer);
             
-            // 验证魔数
-            const magic = new TextDecoder().decode(arrayBuffer.slice(0, 8));
-            if (magic !== 'FASTDOG1') {
-                throw new Error('无效的文件格式');
+            if (this.performanceConfig.enableLogging) {
+                console.log(`📋 解码信息: 版本=${header.version}, 压缩长度=${header.compressedLength}`);
+                console.log(`📋 总数据长度: ${arrayBuffer.byteLength}`);
+                console.log(`📋 原始长度: ${header.originalLength}`);
+                console.log(`📋 压缩数据实际长度: ${header.compressedData.byteLength}`);
             }
             
-            // 读取头部信息
-            const version = view.getUint32(8, true);
-            const compressedLength = view.getUint32(12, true);
+            // 使用统一的解压缩方法
+            const result = this.decompressWithPako(header.compressedData, header.version);
             
-            console.log(`📋 解码信息: 版本=${version}, 压缩长度=${compressedLength}`);
-            console.log(`📋 总数据长度: ${arrayBuffer.byteLength}`);
-            
-            // 提取压缩数据 (从偏移16开始，长度为compressedLength)
-            const compressedData = arrayBuffer.slice(16, 16 + compressedLength);
-            
-            // 读取原始数据长度 (在压缩数据之后)
-            const originalLength = view.getUint32(16 + compressedLength, true);
-            console.log(`📋 原始长度: ${originalLength}`);
-            console.log(`📋 压缩数据实际长度: ${compressedData.byteLength}`);
-            
-            // 使用pako解压缩（如果可用）
-            if (typeof pako !== 'undefined') {
-                try {
-                    const uint8Data = new Uint8Array(compressedData);
-                    
-                    console.log(`🔧 尝试解压缩 ${uint8Data.length} 字节的数据`);
-                    
-                    // 显示压缩数据的前几个字节用于调试
-                    const firstBytes = Array.from(uint8Data.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                    console.log(`🔍 压缩数据前16字节: ${firstBytes}`);
-                    
-                    // 检查zlib头部 (78 da 是标准zlib头部)
-                    if (uint8Data.length >= 2) {
-                        const header = (uint8Data[0] << 8) | uint8Data[1];
-                        console.log(`🔍 压缩头部: 0x${header.toString(16)}`);
-                    }
-                    
-                    // 直接使用标准zlib解压缩
-                    const decompressed = pako.inflate(uint8Data);
-                    console.log('✅ 标准zlib解压成功');
-                    
-                    if (version === 1) {
-                        // 版本1是GLTF JSON格式
-                        const result = new TextDecoder().decode(decompressed);
-                        console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
-                        return result;
-                    } else if (version === 2) {
-                        // 版本2是GLB二进制格式
-                        console.log(`✅ 解压缩完成，得到 ${decompressed.byteLength} 字节的GLB数据`);
-                        return decompressed.buffer;
-                    } else {
-                        throw new Error(`不支持的版本号: ${version}`);
-                    }
-                } catch (error) {
-                    console.error('所有解压缩方法都失败:', error);
-                    throw new Error(`解压缩失败: ${error.message}`);
-                }
-            } else {
-                throw new Error('需要pako库进行解压缩');
+            // 对于版本1，返回字符串而不是解析后的JSON
+            if (header.version === 1 && typeof result === 'object') {
+                return JSON.stringify(result);
             }
+            
+            return result;
+            
         } catch (error) {
-            console.error('JavaScript解码失败:', error);
-            throw error;
+            this.handleError('备用解码', error);
         }
     }
 
@@ -129,6 +95,162 @@ class WASMModelLoader {
     }
 
     /**
+     * 性能监控工具
+     */
+    createPerformanceTracker(operationName) {
+        const startTime = performance.now();
+        const steps = new Map();
+        
+        return {
+            step: (stepName) => {
+                steps.set(stepName, performance.now() - startTime);
+            },
+            finish: () => {
+                const totalTime = performance.now() - startTime;
+                if (this.performanceConfig.enableLogging) {
+                    console.log(`${this.performanceConfig.logPrefix} ${operationName}性能统计:`);
+                    for (const [step, time] of steps) {
+                        console.log(`   ${step}: ${time.toFixed(2)}ms`);
+                    }
+                    console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
+                }
+                return { steps: Object.fromEntries(steps), totalTime };
+            }
+        };
+    }
+
+    /**
+     * 统一错误处理
+     */
+    handleError(operation, error) {
+        const errorMessage = `${operation}失败: ${error.message}`;
+        console.error(errorMessage, error);
+        throw new Error(errorMessage);
+    }
+
+    /**
+     * 缓存管理
+     */
+    getCached(key) {
+        return this.cache.get(key);
+    }
+
+    setCached(key, value) {
+        if (this.cache.size >= this.maxCacheSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        this.cache.set(key, value);
+    }
+
+    /**
+     * 配置管理
+     */
+    setPerformanceLogging(enabled) {
+        this.performanceConfig.enableLogging = enabled;
+    }
+
+    setCacheSize(size) {
+        this.maxCacheSize = Math.max(1, size);
+        // 如果当前缓存超过新限制，清理多余项
+        while (this.cache.size > this.maxCacheSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+    }
+
+    clearCache() {
+        this.cache.clear();
+    }
+
+    getCacheStats() {
+        return {
+            size: this.cache.size,
+            maxSize: this.maxCacheSize,
+            keys: Array.from(this.cache.keys())
+        };
+    }
+
+    /**
+     * 解析二进制数据头部信息
+     */
+    parseBinaryHeader(arrayBuffer) {
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        // 验证魔数
+        const magicBytes = uint8Array.slice(0, 8);
+        const magic = new TextDecoder().decode(magicBytes);
+        
+        if (magic !== 'FASTDOG1') {
+            throw new Error('无效的二进制格式');
+        }
+
+        // 读取版本号
+        const version = new DataView(arrayBuffer, 8, 4).getUint32(0, true);
+        
+        // 读取压缩数据长度
+        const compressedLength = new DataView(arrayBuffer, 12, 4).getUint32(0, true);
+        
+        // 提取压缩数据
+        const compressedData = arrayBuffer.slice(16, 16 + compressedLength);
+        
+        // 读取原始数据长度
+        const originalLength = new DataView(arrayBuffer, 16 + compressedLength, 4).getUint32(0, true);
+        
+        return {
+            version,
+            compressedLength,
+            compressedData,
+            originalLength,
+            magic
+        };
+    }
+
+    /**
+     * 使用pako解压缩数据
+     */
+    decompressWithPako(compressedData, version) {
+        if (typeof pako === 'undefined') {
+            throw new Error('pako库不可用');
+        }
+
+        try {
+            const uint8Data = new Uint8Array(compressedData);
+            
+            // 调试信息
+            if (this.performanceConfig.enableLogging) {
+                const firstBytes = Array.from(uint8Data.slice(0, 16))
+                    .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                console.log(`🔍 压缩数据前16字节: ${firstBytes}`);
+                
+                if (uint8Data.length >= 2) {
+                    const header = (uint8Data[0] << 8) | uint8Data[1];
+                    console.log(`🔍 压缩头部: 0x${header.toString(16)}`);
+                }
+            }
+            
+            // 解压缩
+            const decompressed = pako.inflate(uint8Data);
+            console.log('✅ 标准zlib解压成功');
+            
+            if (version === 1) {
+                // 版本1是GLTF JSON格式
+                const result = new TextDecoder().decode(decompressed);
+                console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
+                return JSON.parse(result);
+            } else if (version === 2) {
+                // 版本2是GLB二进制格式
+                console.log(`✅ 解压缩完成，得到 ${decompressed.byteLength} 字节的GLB数据`);
+                return decompressed.buffer;
+            } else {
+                throw new Error(`不支持的版本号: ${version}`);
+            }
+        } catch (error) {
+            throw new Error(`解压缩失败: ${error.message}`);
+        }
+    }
+
+    /**
      * 获取模型信息
      */
     async getModelInfo(filename) {
@@ -136,15 +258,12 @@ class WASMModelLoader {
             const response = await fetch(`${this.baseUrl}/models/${filename}/info`, {
                 headers: this.getHeaders()
             });
-            
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
             return await response.json();
         } catch (error) {
-            console.error('获取模型信息失败:', error);
-            throw error;
+            this.handleError('获取模型信息', error);
         }
     }
 
@@ -156,15 +275,12 @@ class WASMModelLoader {
             const response = await fetch(`${this.baseUrl}/models/${filename}/manifest`, {
                 headers: this.getHeaders()
             });
-            
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
             return await response.json();
         } catch (error) {
-            console.error('获取模型清单失败:', error);
-            throw error;
+            this.handleError('获取模型清单', error);
         }
     }
 
@@ -172,91 +288,118 @@ class WASMModelLoader {
      * 使用blob方式加载模型（推荐）
      */
     async loadModelBlob(filename, onProgress = null) {
-        const startTime = performance.now();
+        const tracker = this.createPerformanceTracker('Blob模式加载');
+        
         try {
             console.log(`🚀 开始blob方式加载模型: ${filename}`);
             
-            const fetchStart = performance.now();
+            // 检查缓存
+            const cacheKey = `blob_${filename}`;
+            const cached = this.getCached(cacheKey);
+            if (cached) {
+                console.log('✅ 使用缓存数据');
+                return cached;
+            }
+            
+            // 网络请求
             const response = await fetch(`${this.baseUrl}/models/${filename}/blob`, {
                 headers: this.getHeaders()
             });
-            const fetchTime = performance.now() - fetchStart;
+            tracker.step('网络请求');
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
             // 获取响应头信息
-            const originalSize = response.headers.get('X-Original-Size');
-            const compressedSize = response.headers.get('X-Compressed-Size');
-            const compressionRatio = response.headers.get('X-Compression-Ratio');
-            const format = response.headers.get('X-Format');
+            const headers = {
+                originalSize: response.headers.get('X-Original-Size'),
+                compressedSize: response.headers.get('X-Compressed-Size'),
+                compressionRatio: response.headers.get('X-Compression-Ratio'),
+                format: response.headers.get('X-Format')
+            };
 
-            console.log(`📊 模型信息:`);
-            console.log(`   原始大小: ${originalSize} bytes`);
-            console.log(`   压缩大小: ${compressedSize} bytes`);
-            console.log(`   压缩比: ${compressionRatio}`);
-            console.log(`   格式: ${format}`);
+            if (this.performanceConfig.enableLogging) {
+                console.log(`📊 模型信息:`);
+                console.log(`   原始大小: ${headers.originalSize} bytes`);
+                console.log(`   压缩大小: ${headers.compressedSize} bytes`);
+                console.log(`   压缩比: ${headers.compressionRatio}`);
+                console.log(`   格式: ${headers.format}`);
+            }
 
-            // 直接获取ArrayBuffer数据（优化性能）
-            const downloadStart = performance.now();
+            // 下载数据
             const arrayBuffer = await response.arrayBuffer();
-            const downloadTime = performance.now() - downloadStart;
-            console.log(`✅ 数据下载完成: ${arrayBuffer.byteLength} bytes (耗时: ${downloadTime.toFixed(2)}ms)`);
+            tracker.step('数据下载');
+            console.log(`✅ 数据下载完成: ${arrayBuffer.byteLength} bytes`);
             
             // 解码二进制数据
-            const decodeStart = performance.now();
             const decodedData = await this.decodeBinaryData(arrayBuffer);
-            const decodeTime = performance.now() - decodeStart;
+            tracker.step('数据解码');
             
-            // 转换为完整的Three.js模型（包含材质）
-            const convertStart = performance.now();
+            // 转换为完整的Three.js模型
             const modelResult = await this.convertToThreeModel(decodedData);
-            const convertTime = performance.now() - convertStart;
+            tracker.step('模型转换');
             
-            const totalTime = performance.now() - startTime;
-            console.log(`⚡ Blob模式性能统计:`);
-            console.log(`   网络请求: ${fetchTime.toFixed(2)}ms`);
-            console.log(`   数据下载: ${downloadTime.toFixed(2)}ms`);
-            console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
-            console.log(`   模型转换: ${convertTime.toFixed(2)}ms`);
-            console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
+            const performanceStats = tracker.finish();
             
-            return {
+            const result = {
                 model: modelResult.model,
                 geometry: modelResult.geometry, // 保持向后兼容
-                format: format || 'blob',
-                originalSize: parseInt(originalSize),
-                compressedSize: parseInt(compressedSize),
-                compressionRatio: parseFloat(compressionRatio),
-                performanceStats: {
-                    fetchTime: fetchTime.toFixed(2),
-                    downloadTime: downloadTime.toFixed(2),
-                    decodeTime: decodeTime.toFixed(2),
-                    convertTime: convertTime.toFixed(2),
-                    totalTime: totalTime.toFixed(2)
-                }
+                format: headers.format || 'blob',
+                originalSize: parseInt(headers.originalSize),
+                compressedSize: parseInt(headers.compressedSize),
+                compressionRatio: parseFloat(headers.compressionRatio),
+                performanceStats
             };
             
+            // 缓存结果
+            this.setCached(cacheKey, result);
+            
+            return result;
+            
         } catch (error) {
-            console.error('Blob方式加载模型失败:', error);
-            throw error;
+            this.handleError('Blob方式加载模型', error);
         }
+    }
+
+    /**
+     * 合并数据块为ArrayBuffer
+     */
+    mergeChunks(chunks, totalLength) {
+        const arrayBuffer = new ArrayBuffer(totalLength);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        let position = 0;
+        
+        for (const chunk of chunks) {
+            uint8Array.set(chunk, position);
+            position += chunk.length;
+        }
+        
+        return arrayBuffer;
     }
 
     /**
      * 使用流式传输加载模型
      */
     async loadModelStream(filename, onProgress = null) {
-        const startTime = performance.now();
+        const tracker = this.createPerformanceTracker('Stream模式加载');
+        
         try {
             console.log(`🌊 开始流式加载模型: ${filename}`);
             
-            const fetchStart = performance.now();
+            // 检查缓存
+            const cacheKey = `stream_${filename}`;
+            const cached = this.getCached(cacheKey);
+            if (cached) {
+                console.log('✅ 使用缓存数据');
+                return cached;
+            }
+            
+            // 网络请求
             const response = await fetch(`${this.baseUrl}/models/${filename}/binary`, {
                 headers: this.getHeaders()
             });
-            const fetchTime = performance.now() - fetchStart;
+            tracker.step('网络请求');
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -267,7 +410,7 @@ class WASMModelLoader {
             const chunks = [];
             let receivedLength = 0;
 
-            const streamStart = performance.now();
+            // 流式下载
             while (true) {
                 const { done, value } = await reader.read();
                 
@@ -284,59 +427,38 @@ class WASMModelLoader {
                     });
                 }
             }
-            const streamTime = performance.now() - streamStart;
+            tracker.step('流式下载');
 
-            // 合并所有chunks
-            const mergeStart = performance.now();
-            const arrayBuffer = new ArrayBuffer(receivedLength);
-            const uint8Array = new Uint8Array(arrayBuffer);
-            let position = 0;
-            
-            for (const chunk of chunks) {
-                uint8Array.set(chunk, position);
-                position += chunk.length;
-            }
-            const mergeTime = performance.now() - mergeStart;
-
-            console.log(`✅ 流式下载完成: ${receivedLength} bytes (耗时: ${streamTime.toFixed(2)}ms)`);
+            // 合并数据块
+            const arrayBuffer = this.mergeChunks(chunks, receivedLength);
+            tracker.step('数据合并');
+            console.log(`✅ 流式下载完成: ${receivedLength} bytes`);
             
             // 解码二进制数据
-            const decodeStart = performance.now();
             const decodedData = await this.decodeBinaryData(arrayBuffer);
-            const decodeTime = performance.now() - decodeStart;
+            tracker.step('数据解码');
             
-            // 转换为完整的Three.js模型（包含材质）
-            const convertStart = performance.now();
+            // 转换为完整的Three.js模型
             const modelResult = await this.convertToThreeModel(decodedData);
-            const convertTime = performance.now() - convertStart;
+            tracker.step('模型转换');
             
-            const totalTime = performance.now() - startTime;
-            console.log(`⚡ Stream模式性能统计:`);
-            console.log(`   网络请求: ${fetchTime.toFixed(2)}ms`);
-            console.log(`   流式下载: ${streamTime.toFixed(2)}ms`);
-            console.log(`   数据合并: ${mergeTime.toFixed(2)}ms`);
-            console.log(`   数据解码: ${decodeTime.toFixed(2)}ms`);
-            console.log(`   模型转换: ${convertTime.toFixed(2)}ms`);
-            console.log(`   总耗时: ${totalTime.toFixed(2)}ms`);
+            const performanceStats = tracker.finish();
             
-            return { 
+            const result = { 
                 model: modelResult.model,
                 geometry: modelResult.geometry, // 保持向后兼容
                 format: 'stream',
                 size: receivedLength,
-                performanceStats: {
-                    fetchTime: fetchTime.toFixed(2),
-                    streamTime: streamTime.toFixed(2),
-                    mergeTime: mergeTime.toFixed(2),
-                    decodeTime: decodeTime.toFixed(2),
-                    convertTime: convertTime.toFixed(2),
-                    totalTime: totalTime.toFixed(2)
-                }
+                performanceStats
             };
             
+            // 缓存结果
+            this.setCached(cacheKey, result);
+            
+            return result;
+            
         } catch (error) {
-            console.error('流式加载模型失败:', error);
-            throw error;
+            this.handleError('流式加载模型', error);
         }
     }
 
@@ -349,87 +471,32 @@ class WASMModelLoader {
         }
 
         try {
-            // 将ArrayBuffer转换为Uint8Array
-            const uint8Array = new Uint8Array(arrayBuffer);
+            // 解析二进制头部
+            const header = this.parseBinaryHeader(arrayBuffer);
             
-            // 验证魔数
-            const magicBytes = uint8Array.slice(0, 8);
-            const magic = new TextDecoder().decode(magicBytes);
-            
-            if (magic !== 'FASTDOG1') {
-                throw new Error('无效的二进制格式');
+            if (this.performanceConfig.enableLogging) {
+                console.log(`📋 二进制格式版本: ${header.version}`);
+                console.log(`📋 压缩长度: ${header.compressedLength}`);
+                console.log(`📋 原始长度: ${header.originalLength}`);
+                console.log(`📋 压缩数据实际长度: ${header.compressedData.byteLength}`);
             }
-
-            // 读取版本号
-            const version = new DataView(arrayBuffer, 8, 4).getUint32(0, true);
-            console.log(`📋 二进制格式版本: ${version}`);
-
-            // 读取压缩数据长度
-            const compressedLength = new DataView(arrayBuffer, 12, 4).getUint32(0, true);
-            console.log(`📋 压缩长度: ${compressedLength}`);
-            
-            // 提取压缩数据 (从偏移16开始，长度为compressedLength)
-            const compressedData = arrayBuffer.slice(16, 16 + compressedLength);
-            
-            // 读取原始数据长度 (在压缩数据之后)
-            const originalLength = new DataView(arrayBuffer, 16 + compressedLength, 4).getUint32(0, true);
-            console.log(`📋 原始长度: ${originalLength}`);
-            console.log(`📋 压缩数据实际长度: ${compressedData.byteLength}`);
             
             // 使用解码器解压缩
             if (this.wasmModule && this.wasmModule.decodeBinary) {
-                // 使用WASM或JavaScript解码器
-                const result = this.wasmModule.decodeBinary(arrayBuffer, version);
-                if (version === 1) {
+                // 使用WASM解码器
+                const result = this.wasmModule.decodeBinary(arrayBuffer, header.version);
+                if (header.version === 1) {
                     return JSON.parse(result);
-                } else if (version === 2) {
-                    // 版本2是GLB格式，返回ArrayBuffer
+                } else if (header.version === 2) {
                     return result;
                 }
             } else {
-                // 直接使用pako库解压缩
-                if (typeof pako !== 'undefined') {
-                    try {
-                        const uint8Data = new Uint8Array(compressedData);
-                        
-                        // 显示压缩数据的前几个字节用于调试
-                        const firstBytes = Array.from(uint8Data.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                        console.log(`🔍 压缩数据前16字节: ${firstBytes}`);
-                        
-                        // 检查zlib头部 (78 da 是标准zlib头部)
-                        if (uint8Data.length >= 2) {
-                            const header = (uint8Data[0] << 8) | uint8Data[1];
-                            console.log(`🔍 压缩头部: 0x${header.toString(16)}`);
-                        }
-                        
-                        // 直接使用标准zlib解压缩
-                        const decompressed = pako.inflate(uint8Data);
-                        console.log('✅ 标准zlib解压成功');
-                        
-                        if (version === 1) {
-                            // 版本1是GLTF JSON格式
-                            const result = new TextDecoder().decode(decompressed);
-                            console.log(`✅ 解压缩完成，得到 ${result.length} 字符的JSON数据`);
-                            return JSON.parse(result);
-                        } else if (version === 2) {
-                            // 版本2是GLB二进制格式
-                            console.log(`✅ 解压缩完成，得到 ${decompressed.byteLength} 字节的GLB数据`);
-                            return decompressed.buffer;
-                        } else {
-                            throw new Error(`不支持的版本号: ${version}`);
-                        }
-                    } catch (error) {
-                        console.error('解压缩失败:', error);
-                        throw new Error(`解压缩失败: ${error.message}`);
-                    }
-                } else {
-                    throw new Error('解码器和pako库都不可用');
-                }
+                // 使用pako库解压缩
+                return this.decompressWithPako(header.compressedData, header.version);
             }
             
         } catch (error) {
-            console.error('解码二进制数据失败:', error);
-            throw error;
+            this.handleError('解码二进制数据', error);
         }
     }
 
@@ -502,54 +569,80 @@ class WASMModelLoader {
             }
             
         } catch (error) {
-            console.error('转换Three.js模型失败:', error);
-            throw error;
+            this.handleError('转换Three.js模型', error);
         }
+    }
+
+    /**
+     * 将base64数据转换为ArrayBuffer
+     */
+    base64ToArrayBuffer(base64Data) {
+        const binaryString = atob(base64Data);
+        const arrayBuffer = new ArrayBuffer(binaryString.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < binaryString.length; i++) {
+            uint8Array[i] = binaryString.charCodeAt(i);
+        }
+        return arrayBuffer;
+    }
+
+    /**
+     * 从模型中提取几何体
+     */
+    extractGeometry(model) {
+        let geometry = null;
+        model.traverse((child) => {
+            if (child.isMesh && child.geometry && !geometry) {
+                geometry = child.geometry;
+            }
+        });
+        
+        if (!geometry) {
+            // 如果没有找到几何体，创建一个默认的
+            geometry = new window.THREE.BoxGeometry(1, 1, 1);
+        }
+        
+        return geometry;
     }
 
     /**
      * 从base64编码的FBX数据加载模型
      */
     async loadFBXFromBase64(base64Data) {
+        const tracker = this.createPerformanceTracker('FBX加载');
+        
         return new Promise((resolve, reject) => {
             try {
-                console.log('🎨 使用FBXLoader加载FBX数据');
-                
-                // 将base64数据转换为ArrayBuffer
-                const binaryString = atob(base64Data);
-                const arrayBuffer = new ArrayBuffer(binaryString.length);
-                const uint8Array = new Uint8Array(arrayBuffer);
-                for (let i = 0; i < binaryString.length; i++) {
-                    uint8Array[i] = binaryString.charCodeAt(i);
+                if (this.performanceConfig.enableLogging) {
+                    console.log('🎨 使用FBXLoader加载FBX数据');
                 }
                 
+                // 转换数据格式
+                const arrayBuffer = this.base64ToArrayBuffer(base64Data);
+                tracker.step('数据转换');
+                
+                // 加载FBX模型
                 const loader = new window.FBXLoader();
                 const fbxModel = loader.parse(arrayBuffer, '');
+                tracker.step('FBX解析');
                 
                 console.log('✅ FBXLoader加载成功');
                 
-                // 提取第一个几何体用于向后兼容
-                let geometry = null;
-                fbxModel.traverse((child) => {
-                    if (child.isMesh && child.geometry && !geometry) {
-                        geometry = child.geometry;
-                    }
-                });
+                // 提取几何体
+                const geometry = this.extractGeometry(fbxModel);
+                tracker.step('几何体提取');
                 
-                if (!geometry) {
-                    // 如果没有找到几何体，创建一个默认的
-                    geometry = new window.THREE.BoxGeometry(1, 1, 1);
-                }
+                const performanceStats = tracker.finish();
                 
                 // 返回完整的模型和几何体
                 resolve({
                     model: fbxModel,
-                    geometry: geometry
+                    geometry: geometry,
+                    performanceStats
                 });
                 
             } catch (error) {
-                console.error('❌ FBXLoader加载失败:', error);
-                reject(error);
+                reject(new Error(`FBXLoader加载失败: ${error.message}`));
             }
         });
     }
@@ -832,29 +925,232 @@ class WASMModelLoader {
     }
 
     /**
+     * 智能模型加载 - 自动选择最佳加载策略
+     */
+    async loadModel(filename, options = {}) {
+        const {
+            method = 'auto', // 'auto', 'blob', 'stream'
+            onProgress = null,
+            useCache = true
+        } = options;
+        
+        const tracker = this.createPerformanceTracker('智能加载');
+        
+        try {
+            console.log(`🤖 智能加载模型: ${filename}`);
+            
+            // 检查缓存
+            if (useCache) {
+                const cacheKey = `smart_${filename}`;
+                const cached = this.getCached(cacheKey);
+                if (cached) {
+                    console.log('✅ 使用缓存数据');
+                    return cached;
+                }
+            }
+            
+            let result;
+            
+            if (method === 'auto') {
+                // 自动选择最佳方法
+                try {
+                    // 首先尝试获取模型信息来决定加载策略
+                    const info = await this.getModelInfo(filename);
+                    tracker.step('获取模型信息');
+                    
+                    // 根据文件大小选择加载方法
+                    const sizeThreshold = 10 * 1024 * 1024; // 10MB
+                    const useStream = info.size && info.size > sizeThreshold;
+                    
+                    if (useStream) {
+                        console.log('📊 文件较大，使用流式加载');
+                        result = await this.loadModelStream(filename, onProgress);
+                    } else {
+                        console.log('📊 文件较小，使用blob加载');
+                        result = await this.loadModelBlob(filename, onProgress);
+                    }
+                } catch (infoError) {
+                    // 如果获取信息失败，默认使用blob方法
+                    console.log('⚠️ 无法获取模型信息，使用默认blob加载');
+                    result = await this.loadModelBlob(filename, onProgress);
+                }
+            } else if (method === 'blob') {
+                result = await this.loadModelBlob(filename, onProgress);
+            } else if (method === 'stream') {
+                result = await this.loadModelStream(filename, onProgress);
+            } else {
+                throw new Error(`不支持的加载方法: ${method}`);
+            }
+            
+            tracker.step('模型加载');
+            
+            // 缓存结果
+            if (useCache) {
+                const cacheKey = `smart_${filename}`;
+                this.setCached(cacheKey, result);
+            }
+            
+            const performanceStats = tracker.finish();
+            result.smartLoadStats = performanceStats;
+            
+            return result;
+            
+        } catch (error) {
+            this.handleError('智能加载模型', error);
+        }
+    }
+
+    /**
      * 渐进式加载（分片加载）
      */
     async loadModelProgressive(filename, onProgress = null) {
         try {
             console.log(`📦 开始渐进式加载模型: ${filename}`);
             
-            // 获取模型清单
-            const manifest = await this.getModelManifest(filename);
-            
-            // 首先加载预览版本
-            if (onProgress) {
-                onProgress({ stage: 'preview', percentage: 0 });
-            }
-            
-            // 这里可以实现分片加载逻辑
-            // 例如先加载低精度版本，再逐步加载高精度版本
-            
-            return await this.loadModelBlob(filename, onProgress);
+            // 使用智能加载作为默认实现
+            return await this.loadModel(filename, { onProgress });
             
         } catch (error) {
-            console.error('渐进式加载失败:', error);
-            throw error;
+            this.handleError('渐进式加载模型', error);
         }
+    }
+
+    /**
+     * 批量加载多个模型（支持并发和智能加载）
+     */
+    async loadMultipleModels(filenames, options = {}) {
+        const {
+            concurrent = 3, // 并发数量
+            onProgress = null,
+            useSmartLoad = true,
+            continueOnError = true
+        } = options;
+        
+        const tracker = this.createPerformanceTracker('批量加载');
+        
+        try {
+            console.log(`📦 开始批量加载 ${filenames.length} 个模型（并发: ${concurrent}）`);
+            
+            const results = [];
+            const total = filenames.length;
+            let completed = 0;
+            
+            // 分批处理
+            for (let i = 0; i < filenames.length; i += concurrent) {
+                const batch = filenames.slice(i, i + concurrent);
+                
+                const batchPromises = batch.map(async (filename, batchIndex) => {
+                    const globalIndex = i + batchIndex;
+                    
+                    try {
+                        const loadMethod = useSmartLoad ? 
+                            this.loadModel.bind(this) : 
+                            this.loadModelBlob.bind(this);
+                            
+                        const result = await loadMethod(filename);
+                        
+                        completed++;
+                        if (onProgress) {
+                            onProgress({
+                                stage: 'loading',
+                                current: completed,
+                                total: total,
+                                filename: filename,
+                                percentage: Math.round((completed / total) * 100)
+                            });
+                        }
+                        
+                        return { filename, result, success: true, index: globalIndex };
+                        
+                    } catch (error) {
+                        completed++;
+                        console.error(`加载模型失败: ${filename}`, error);
+                        
+                        if (onProgress) {
+                            onProgress({
+                                stage: 'error',
+                                current: completed,
+                                total: total,
+                                filename: filename,
+                                error: error.message,
+                                percentage: Math.round((completed / total) * 100)
+                            });
+                        }
+                        
+                        if (!continueOnError) {
+                            throw error;
+                        }
+                        
+                        return { filename, error, success: false, index: globalIndex };
+                    }
+                });
+                
+                const batchResults = await Promise.all(batchPromises);
+                results.push(...batchResults);
+                
+                tracker.step(`批次 ${Math.floor(i / concurrent) + 1}`);
+            }
+            
+            // 按原始顺序排序
+            results.sort((a, b) => a.index - b.index);
+            
+            const successCount = results.filter(r => r.success).length;
+            const performanceStats = tracker.finish();
+            
+            console.log(`✅ 批量加载完成，成功: ${successCount}/${total}`);
+            
+            return {
+                results: results.map(r => ({ filename: r.filename, result: r.result, error: r.error, success: r.success })),
+                stats: {
+                    total,
+                    success: successCount,
+                    failed: total - successCount,
+                    performance: performanceStats
+                }
+            };
+            
+        } catch (error) {
+            this.handleError('批量加载模型', error);
+        }
+    }
+    
+    /**
+     * 预加载模型（后台加载，不阻塞当前操作）
+     */
+    async preloadModels(filenames, options = {}) {
+        const {
+            priority = 'low', // 'low', 'normal', 'high'
+            onComplete = null
+        } = options;
+        
+        console.log(`🔄 开始预加载 ${filenames.length} 个模型`);
+        
+        // 使用 setTimeout 来降低优先级
+        const delay = priority === 'low' ? 100 : priority === 'normal' ? 50 : 0;
+        
+        setTimeout(async () => {
+            try {
+                const results = await this.loadMultipleModels(filenames, {
+                    concurrent: priority === 'high' ? 5 : 2,
+                    useSmartLoad: true,
+                    continueOnError: true
+                });
+                
+                console.log(`✅ 预加载完成: ${results.stats.success}/${results.stats.total}`);
+                
+                if (onComplete) {
+                    onComplete(results);
+                }
+                
+            } catch (error) {
+                console.warn('预加载失败:', error);
+                if (onComplete) {
+                    onComplete({ error });
+                }
+            }
+        }, delay);
+        
+        return Promise.resolve(); // 立即返回，不阻塞
     }
 }
 
