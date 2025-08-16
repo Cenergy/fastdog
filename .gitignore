@@ -134,3 +134,4 @@ data/
 *.db-wal
 uv.lock
 logs/
+front-end/
