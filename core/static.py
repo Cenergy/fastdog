@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from .protected_static import ProtectedStaticFiles
 import os
 
 def setup_static_files(app: FastAPI):
@@ -15,7 +16,11 @@ def setup_static_files(app: FastAPI):
     # 确保静态文件目录存在
     os.makedirs(static_dir, exist_ok=True)
     
-    # 挂载静态文件目录
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    # 使用受保护的静态文件处理器，限制 .gltf 和 .fastdog 文件的直接访问
+    app.mount("/static", ProtectedStaticFiles(
+        directory=static_dir,
+        protected_extensions=[".gltf", ".fastdog"],
+        protected_paths=["/uploads/models/"]
+    ), name="static")
     
     return app

@@ -527,8 +527,8 @@ class Model3DAdmin(TortoiseModelAdmin):
                                             cf.flush()
                                             os.fsync(cf.fileno())
                                         
-                                        # 更新binary_file_url到payload
-                                        payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
+                                        # 不更新binary_file_url到payload
+                                        # payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
                                         
                                     except Exception as e:
                                         pass  # 生成压缩二进制文件失败，继续处理
