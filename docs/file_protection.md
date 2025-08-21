@@ -29,27 +29,32 @@
 
 ## 配置说明
 
-### 修改受保护的文件类型
+### 修改受保护的文件类型和路径
 
-在 `core/static.py` 文件中修改 `protected_extensions` 参数：
+文件保护配置现在统一在 `core/settings.py` 配置文件中管理：
 
 ```python
-app.mount("/static", ProtectedStaticFiles(
-    directory=static_dir,
-    protected_extensions=[".gltf", ".fastdog", ".新扩展名"],
-    protected_paths=["/uploads/models/"]
-), name="static")
+# 文件访问保护配置
+PROTECTED_FILE_ENABLE: bool = True  # 是否启用文件访问保护功能
+PROTECTED_FILE_EXTENSIONS: List[str] = [".gltf", ".glb", ".fastdog"]  # 受保护的文件扩展名
+PROTECTED_FILE_PATHS: List[str] = ["/uploads/models/"]  # 受保护的文件路径
 ```
 
-### 修改受保护的路径
+### 启用/禁用文件保护
 
-在 `core/static.py` 文件中修改 `protected_paths` 参数：
+通过 `PROTECTED_FILE_ENABLE` 配置项可以控制是否启用文件访问保护功能：
+
+- `True`（默认）：启用文件保护，使用 `ProtectedStaticFiles` 处理静态文件
+- `False`：禁用文件保护，使用标准的 `StaticFiles` 处理静态文件
+
+这些配置会自动应用到 `ProtectedStaticFiles` 中：
 
 ```python
+# core/static.py
 app.mount("/static", ProtectedStaticFiles(
     directory=static_dir,
-    protected_extensions=[".gltf", ".fastdog"],
-    protected_paths=["/uploads/models/", "/uploads/sensitive/", "/private/"]
+    protected_extensions=settings.PROTECTED_FILE_EXTENSIONS,
+    protected_paths=settings.PROTECTED_FILE_PATHS
 ), name="static")
 ```
 

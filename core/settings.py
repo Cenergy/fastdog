@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # 图片处理配置
     SAVE_ORIGINAL_PHOTOS: bool = False  # 是否保存原始图片文件，默认不保存
     
+    # 文件访问保护配置
+    PROTECTED_FILE_ENABLE: bool = True  # 是否启用文件访问保护功能
+    PROTECTED_FILE_EXTENSIONS: List[str] = [".gltf", ".glb", ".fastdog"]  # 受保护的文件扩展名
+    PROTECTED_FILE_PATHS: List[str] = ["/uploads/models/"]  # 受保护的文件路径
+    
     # 坐标转换线程池设置
     CONVERTERS_THREAD_POOL_THRESHOLD: int = 1000  # 启用线程池的数据行数阈值
     CONVERTERS_THREAD_POOL_WORKERS: int = 4  # 线程池工作线程数
