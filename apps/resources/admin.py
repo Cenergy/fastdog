@@ -378,330 +378,388 @@ class Model3DAdmin(TortoiseModelAdmin):
             "maxFileSize": 10 * 1024 * 1024,  # 10MB
         }) 
     }
-    async def get_model_upload_dir(payload: dict) ->str|None:
-        is_public = payload.get("is_public", False)
+    def _get_upload_directory(self, is_public: bool) -> str:
+        """获取上传目录路径"""
         if is_public:
-            upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
+            return os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
         else:
-            upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
-        return upload_dir
-
+            return os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
+    
+    def _generate_file_url(self, filename: str, is_public: bool) -> str:
+        """生成文件URL"""
+        if is_public:
+            return f"/static{settings.PUBLIC_MODEL_PATH}{filename}"
+        else:
+            return f"/static{settings.PRIVATE_MODEL_PATH}{filename}"
+    
+    def _validate_file_type(self, field_name: str, file_ext: str) -> None:
+        """验证文件类型"""
+        if field_name == "thumbnail_url":
+            if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+                raise ValueError(f"缩略图不支持的格式: {file_ext}")
+        elif field_name == "model_file_url":
+            if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
+                raise ValueError(f"模型文件不支持的格式: {file_ext}")
+        elif field_name == "binary_file_url":
+            if file_ext not in [".bin"]:
+                raise ValueError(f"二进制文件不支持的格式: {file_ext}")
+    
+    def _save_file_to_disk(self, file_path: str, content: bytes) -> None:
+        """保存文件到磁盘"""
+        with open(file_path, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+    
+    async def _get_or_generate_model_uuid(self, id: UUID | int | None) -> tuple[str, object | None]:
+        """获取或生成模型UUID"""
+        model_uuid = None
+        existing_model = None
+        if id:
+            # 编辑现有模型，获取现有UUID
+            existing_model = await self.model.get(id=id)
+            model_uuid = existing_model.uuid
+        else:
+            # 新建模型，生成新UUID
+            import uuid
+            model_uuid = uuid.uuid4().hex
+        return model_uuid, existing_model
+    
+    async def _move_files_for_public_status_change(self, existing_model, model_uuid: str, is_public: bool, file_fields: list, payload: dict) -> None:
+        """当is_public状态变化时移动文件"""
+        import shutil
+        
+        upload_dir = self._get_upload_directory(is_public)
+        old_upload_dir = self._get_upload_directory(existing_model.is_public)
+        
+        # 确保新目录存在
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # 移动现有文件并更新URL
+        for field_name in file_fields:
+            current_url = getattr(existing_model, field_name)
+            if current_url:
+                # 从URL中提取文件名
+                filename = os.path.basename(current_url)
+                old_file_path = os.path.join(old_upload_dir, filename)
+                new_file_path = os.path.join(upload_dir, filename)
+                
+                # 如果旧文件存在，移动到新位置
+                if os.path.exists(old_file_path):
+                    try:
+                        shutil.move(old_file_path, new_file_path)
+                        # 更新URL路径
+                        payload[field_name] = self._generate_file_url(filename, is_public)
+                    except Exception as e:
+                        print(f"移动文件失败: {old_file_path} -> {new_file_path}, 错误: {e}")
+        
+        # 移动.fastdog文件
+        fastdog_filename = f"{model_uuid}.fastdog"
+        old_fastdog_path = os.path.join(old_upload_dir, fastdog_filename)
+        new_fastdog_path = os.path.join(upload_dir, fastdog_filename)
+        
+        if os.path.exists(old_fastdog_path):
+            try:
+                shutil.move(old_fastdog_path, new_fastdog_path)
+            except Exception as e:
+                print(f"移动.fastdog文件失败: {old_fastdog_path} -> {new_fastdog_path}, 错误: {e}")
+    
+    async def _process_upload_file(self, file: UploadFile, field_name: str, model_uuid: str, upload_dir: str, is_public: bool, payload: dict) -> None:
+        """处理UploadFile文件上传"""
+        try:
+            # 确保上传目录存在
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            # 获取文件扩展名并转换为小写
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            
+            # 验证文件格式
+            self._validate_file_type(field_name, file_ext)
+            
+            # 使用模型UUID生成文件名
+            unique_filename = f"{str(model_uuid)}{file_ext}"
+            file_path = os.path.join(upload_dir, unique_filename)
+            
+            # 读取文件内容
+            content = await file.read()
+            
+            # 保存文件
+            self._save_file_to_disk(file_path, content)
+            
+            # 更新文件URL到payload
+            payload[field_name] = self._generate_file_url(unique_filename, is_public)
+            
+        except Exception as e:
+             raise e
+    
+    async def _process_base64_thumbnail(self, file: str, model_uuid: str, upload_dir: str, is_public: bool, payload: dict, field_name: str) -> None:
+        """处理缩略图的base64编码"""
+        import base64
+        import re
+        
+        # 确保上传目录存在
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # 处理缩略图的base64编码
+        base64_pattern = r'^data:image/(\w+);base64,(.+)$'
+        match = re.match(base64_pattern, file)
+        
+        if match:
+            base64_data = match.group(2)
+            
+            try:
+                # 解码base64数据
+                image_data = base64.b64decode(base64_data)
+                
+                # 使用python-magic检测文件类型
+                file_ext = detect_file_type_from_data(image_data)
+                
+                # 验证缩略图格式
+                if file_ext not in [".jpg", ".png", ".gif", ".webp"]:
+                    raise ValueError(f"缩略图不支持的格式: {file_ext}")
+                
+                # 使用模型UUID生成文件名
+                unique_filename = f"{str(model_uuid)}{file_ext}"
+                file_path = os.path.join(upload_dir, unique_filename)
+                
+                # 保存文件
+                self._save_file_to_disk(file_path, image_data)
+                
+                # 更新文件URL到payload
+                payload[field_name] = self._generate_file_url(unique_filename, is_public)
+                
+            except Exception as e:
+                raise ValueError(f"无效的base64图片数据: {str(e)}")
+        else:
+            raise ValueError("无效的base64图片格式")
+    
+    async def _process_base64_model_file(self, file: str, field_name: str, model_uuid: str, upload_dir: str, is_public: bool, payload: dict) -> None:
+        """处理模型文件的base64编码"""
+        import base64
+        
+        try:
+            # 检查base64数据长度，避免过大文件
+            if len(file) > 50 * 1024 * 1024:  # 50MB限制
+                raise ValueError(f"文件过大({len(file)}字符)，建议不超过30MB，请使用文件上传方式")
+            
+            # 解析base64数据
+            if file.startswith('data:'):
+                # 处理带MIME类型的base64
+                header, base64_data = file.split(',', 1)
+            else:
+                # 纯base64数据
+                base64_data = file
+            
+            # 解码base64数据
+            model_data = base64.b64decode(base64_data)
+            
+            # 使用python-magic检测文件类型
+            file_ext = detect_file_type_from_data(model_data)
+            
+            # 验证文件格式
+            if field_name == "model_file_url":
+                if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
+                    raise ValueError(f"模型文件不支持的格式: {file_ext}")
+            elif field_name == "binary_file_url":
+                if file_ext not in [".bin", ".glb", ".fastdog"]:
+                    raise ValueError(f"二进制文件不支持的格式: {file_ext}")
+            
+            # 使用模型UUID生成文件名
+            unique_filename = f"{str(model_uuid)}{file_ext}"
+            file_path = os.path.join(upload_dir, unique_filename)
+            
+            # 保存文件
+            self._save_file_to_disk(file_path, model_data)
+            
+            # 如果是3D模型文件，同时生成压缩的二进制文件
+            if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
+                await self._generate_compressed_model(model_data, model_uuid, upload_dir)
+            
+            # 更新文件URL到payload
+            payload[field_name] = self._generate_file_url(unique_filename, is_public)
+            
+        except Exception as e:
+            # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
+            payload.pop(field_name, None)
+    
+    async def _generate_compressed_model(self, model_data: bytes, model_uuid: str, upload_dir: str) -> None:
+        """生成压缩的3D模型文件"""
+        try:
+            # 使用统一的转换函数处理各种格式
+            compressed_data = convert_model_to_binary(model_data, ".gltf")  # 假设使用gltf格式
+            
+            # 保存压缩文件
+            compressed_filename = f"{str(model_uuid)}.fastdog"
+            compressed_file_path = os.path.join(upload_dir, compressed_filename)
+            
+            self._save_file_to_disk(compressed_file_path, compressed_data)
+            
+        except Exception as e:
+            pass  # 生成压缩二进制文件失败，继续处理
     
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
-        # 处理上传的模型文件
+        """保存模型，处理文件上传和数据库操作"""
         try:
             # 获取或生成模型UUID
-            model_uuid = None
-            existing_model = None
-            if id:
-                # 编辑现有模型，获取现有UUID
-                existing_model = await self.model.get(id=id)
-                model_uuid = existing_model.uuid
-            else:
-                # 新建模型，生成新UUID
-                import uuid
-                model_uuid = uuid.uuid4().hex
+            model_uuid, existing_model = await self._get_or_generate_model_uuid(id)
             
             # 确保payload中不包含用户输入的uuid字段
             payload.pop('uuid', None)
             
-            # 需要处理的文件字段
-            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
-            # 检查是否公开
-            is_public = payload.get("is_public", False)
-
-            if is_public:
-                upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
-            else:
-                upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
+            # 处理文件上传和移动
+            await self._handle_file_operations(id, model_uuid, existing_model, payload)
             
-            # 如果是编辑现有模型且is_public状态发生变化，需要移动现有文件
-            if existing_model and existing_model.is_public != is_public:
-                import shutil
-                
-                # 确保新目录存在
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                # 获取旧目录
-                if existing_model.is_public:
-                    old_upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
-                else:
-                    old_upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
-                
-                # 移动现有文件并更新URL
-                for field_name in file_fields:
-                    current_url = getattr(existing_model, field_name)
-                    if current_url:
-                        # 从URL中提取文件名
-                        filename = os.path.basename(current_url)
-                        old_file_path = os.path.join(old_upload_dir, filename)
-                        new_file_path = os.path.join(upload_dir, filename)
-                        
-                        # 如果旧文件存在，移动到新位置
-                        if os.path.exists(old_file_path):
-                            try:
-                                shutil.move(old_file_path, new_file_path)
-                                # 更新URL路径
-                                if is_public:
-                                    payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{filename}"
-                                else:
-                                    payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{filename}"
-                            except Exception as e:
-                                print(f"移动文件失败: {old_file_path} -> {new_file_path}, 错误: {e}")
-                
-                # 移动.fastdog文件
-                fastdog_filename = f"{model_uuid}.fastdog"
-                old_fastdog_path = os.path.join(old_upload_dir, fastdog_filename)
-                new_fastdog_path = os.path.join(upload_dir, fastdog_filename)
-                
-                if os.path.exists(old_fastdog_path):
-                    try:
-                        shutil.move(old_fastdog_path, new_fastdog_path)
-                    except Exception as e:
-                        print(f"移动.fastdog文件失败: {old_fastdog_path} -> {new_fastdog_path}, 错误: {e}")
-            
-            for field_name in file_fields:
-                if field_name in payload and payload[field_name] is not None:
-                    file = payload[field_name]
-                    if isinstance(file, UploadFile):
-                        try:
-                            # 确保上传目录存在
-                            # upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "models")
-                            os.makedirs(upload_dir, exist_ok=True)
-                            
-                            # 获取文件扩展名并转换为小写
-                            file_ext = os.path.splitext(file.filename)[1].lower()
-                            
-                            # 根据字段类型验证文件格式
-                            if field_name == "thumbnail_url":
-                                if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                                    raise ValueError(f"缩略图不支持的格式: {file_ext}")
-                            elif field_name == "model_file_url":
-                                if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
-                                    raise ValueError(f"模型文件不支持的格式: {file_ext}")
-                            elif field_name == "binary_file_url":
-                                if file_ext not in [".bin"]:
-                                    raise ValueError(f"二进制文件不支持的格式: {file_ext}")
-                            
-                            # 使用模型UUID生成文件名
-                            unique_filename = f"{str(model_uuid)}{file_ext}"
-                            file_path = os.path.join(upload_dir, unique_filename)
-                            
-                            # 读取文件内容
-                            content = await file.read()
-                            
-                            # 保存文件
-                            with open(file_path, "wb") as f:
-                                f.write(content)
-                                f.flush()
-                                os.fsync(f.fileno())
-                            
-                            # 更新文件URL到payload
-                            if is_public:
-                                payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
-                            else:
-                                payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
-                            
-                        except Exception as e:
-                            raise e
-                    elif isinstance(file, str) and (is_valid_base64(file) or file.startswith('data:')):
-                        import base64
-                        import re
-                        
-                        # 确保上传目录存在
-                        # 使用已经设置的upload_dir变量
-                        os.makedirs(upload_dir, exist_ok=True)
-                        
-                        if field_name == "thumbnail_url":
-                            # 处理缩略图的base64编码
-                            base64_pattern = r'^data:image/(\w+);base64,(.+)$'
-                            match = re.match(base64_pattern, file)
-                            
-                            if match:
-                                base64_data = match.group(2)
-                                
-                                try:
-                                    # 解码base64数据
-                                    image_data = base64.b64decode(base64_data)
-                                    
-                                    # 使用python-magic检测文件类型
-                                    file_ext = detect_file_type_from_data(image_data)
-                                    
-                                    # 验证缩略图格式
-                                    if file_ext not in [".jpg", ".png", ".gif", ".webp"]:
-                                        raise ValueError(f"缩略图不支持的格式: {file_ext}")
-                                    
-                                    # 使用模型UUID生成文件名
-                                    unique_filename = f"{str(model_uuid)}{file_ext}"
-                                    file_path = os.path.join(upload_dir, unique_filename)
-                                    
-                                    # 保存文件
-                                    with open(file_path, "wb") as f:
-                                        f.write(image_data)
-                                        f.flush()
-                                        os.fsync(f.fileno())
-                                    
-                                    # 更新文件URL到payload
-                                    if is_public:
-                                        payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
-                                    else:
-                                        payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
-                                    
-                                except Exception as e:
-                                    raise ValueError(f"无效的base64图片数据: {str(e)}")
-                            else:
-                                raise ValueError("无效的base64图片格式")
-                        else:
-                            # 处理模型文件的base64编码
-                            try:
-                                # 检查base64数据长度，避免过大文件
-                                if len(file) > 50 * 1024 * 1024:  # 50MB限制
-                                    raise ValueError(f"文件过大({len(file)}字符)，建议不超过30MB，请使用文件上传方式")
-                                
-                                # 解析base64数据
-                                if file.startswith('data:'):
-                                    # 处理带MIME类型的base64
-                                    header, base64_data = file.split(',', 1)
-                                else:
-                                    # 纯base64数据
-                                    base64_data = file
-                                
-                                # 解码base64数据
-                                model_data = base64.b64decode(base64_data)
-                                
-                                # 使用python-magic检测文件类型
-                                file_ext = detect_file_type_from_data(model_data)
-                                
-                                # 验证文件格式
-                                if field_name == "model_file_url":
-                                    if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
-                                        raise ValueError(f"模型文件不支持的格式: {file_ext}")
-                                elif field_name == "binary_file_url":
-                                    if file_ext not in [".bin", ".glb", ".fastdog"]:
-                                        raise ValueError(f"二进制文件不支持的格式: {file_ext}")
-                                
-                                # 使用模型UUID生成文件名
-                                unique_filename = f"{str(model_uuid)}{file_ext}"
-                                file_path = os.path.join(upload_dir, unique_filename)
-                                
-                                # 保存文件
-                                with open(file_path, "wb") as f:
-                                    f.write(model_data)
-                                    f.flush()
-                                    os.fsync(f.fileno())
-                                
-                                # 如果是3D模型文件，同时生成压缩的二进制文件
-                                if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                                    try:
-                                        # 使用统一的转换函数处理各种格式
-                                        compressed_data = convert_model_to_binary(model_data, file_ext)
-                                        
-                                        # 保存压缩文件
-                                        compressed_filename = f"{str(model_uuid)}.fastdog"
-                                        compressed_file_path = os.path.join(upload_dir, compressed_filename)
-                                        
-                                        with open(compressed_file_path, "wb") as cf:
-                                            cf.write(compressed_data)
-                                            cf.flush()
-                                            os.fsync(cf.fileno())
-                                        
-                                        # 不更新binary_file_url到payload
-                                        # payload['binary_file_url'] = f"/static/uploads/models/{compressed_filename}"
-                                        
-                                    except Exception as e:
-                                        pass  # 生成压缩二进制文件失败，继续处理
-                                
-                                # 更新文件URL到payload
-                                if is_public:
-                                    payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
-                                else:
-                                    payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
-                                
-                            except Exception as e:
-                                # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
-                                payload.pop(field_name, None)
-                                continue    
             # 对于新建模型，将生成的UUID添加到payload中
             if not id:
                 payload['uuid'] = model_uuid
             
-            # 验证文件URL字段长度，确保不超过数据库限制
-            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
-            for field_name in file_fields:
-                if field_name in payload and payload[field_name]:
-                    url_value = payload[field_name]
-                    if isinstance(url_value, str) and len(url_value) > 2048:
-                        payload.pop(field_name, None)
+            # 验证并清理文件URL字段
+            self._validate_and_clean_file_urls(payload)
             
-            # 保存模型
-            result = await super().save_model(id, payload)
-            
-            # 验证保存结果
-            if result:
-                saved_model = await self.model.get(id=result["id"])
-                
-                # 如果文件URL没有正确保存，尝试直接更新
-                update_needed = False
-                for field_name in file_fields:
-                    if field_name in payload and payload[field_name] and getattr(saved_model, field_name) != payload[field_name]:
-                        setattr(saved_model, field_name, payload[field_name])
-                        update_needed = True
-                
-                if update_needed:
-                    await saved_model.save()
+            # 保存模型到数据库
+            result = await self._save_model_to_database(id, payload)
             
             return result
         except Exception as e:
             raise e
     
+    async def _handle_file_operations(self, id: UUID | int | None, model_uuid: str, existing_model, payload: dict) -> None:
+        """处理所有文件相关操作"""
+        # 需要处理的文件字段
+        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+        # 检查是否公开
+        is_public = payload.get("is_public", False)
+        upload_dir = self._get_upload_directory(is_public)
+        
+        # 如果是编辑现有模型且is_public状态发生变化，需要移动现有文件
+        if existing_model and existing_model.is_public != is_public:
+            await self._move_files_for_public_status_change(existing_model, model_uuid, is_public, file_fields, payload)
+        
+        # 处理文件上传
+        for field_name in file_fields:
+            if field_name in payload and payload[field_name] is not None:
+                file = payload[field_name]
+                if isinstance(file, UploadFile):
+                    await self._process_upload_file(file, field_name, model_uuid, upload_dir, is_public, payload)
+                elif isinstance(file, str) and (is_valid_base64(file) or file.startswith('data:')):
+                    if field_name == "thumbnail_url":
+                        await self._process_base64_thumbnail(file, model_uuid, upload_dir, is_public, payload, field_name)
+                    else:
+                        await self._process_base64_model_file(file, field_name, model_uuid, upload_dir, is_public, payload)
+    
+    def _validate_and_clean_file_urls(self, payload: dict) -> None:
+        """验证文件URL字段长度，确保不超过数据库限制"""
+        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+        for field_name in file_fields:
+            if field_name in payload and payload[field_name]:
+                url_value = payload[field_name]
+                if isinstance(url_value, str) and len(url_value) > 2048:
+                    payload.pop(field_name, None)
+    
+    async def _save_model_to_database(self, id: UUID | int | None, payload: dict) -> dict | None:
+        """保存模型到数据库并验证结果"""
+        # 保存模型
+        result = await super().save_model(id, payload)
+        
+        # 验证保存结果
+        if result:
+            saved_model = await self.model.get(id=result["id"])
+            
+            # 如果文件URL没有正确保存，尝试直接更新
+            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+            update_needed = False
+            for field_name in file_fields:
+                if field_name in payload and payload[field_name] and getattr(saved_model, field_name) != payload[field_name]:
+                    setattr(saved_model, field_name, payload[field_name])
+                    update_needed = True
+            
+            if update_needed:
+                await saved_model.save()
+        
+        return result
+    
     async def delete_model(self, id: str) -> bool:
         """删除模型时同时删除相关文件"""
         try:
-            # 先获取模型信息，获取文件路径
+            # 获取模型信息
             model = await self.model.get(id=id)
             
             # 收集需要删除的文件路径
-            files_to_delete = []
-            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+            files_to_delete = await self._collect_files_to_delete(model)
             
-            for field_name in file_fields:
-                file_url = getattr(model, field_name, None)
-                if file_url:
-                    # 处理public模型路径
-                    if file_url.startswith(f"/static{settings.PUBLIC_MODEL_PATH}"):
-                        filename = file_url.replace(f"/static{settings.PUBLIC_MODEL_PATH}", "")
-                        file_path = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), filename)
-                        if os.path.exists(file_path):
-                            files_to_delete.append((field_name, file_path))
-                    # 处理private模型路径
-                    elif file_url.startswith(f"/static{settings.PRIVATE_MODEL_PATH}"):
-                        filename = file_url.replace(f"/static{settings.PRIVATE_MODEL_PATH}", "")
-                        file_path = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), filename)
-                        if os.path.exists(file_path):
-                            files_to_delete.append((field_name, file_path))
-            
-            # 删除自动生成的fastdog文件
-            if model.uuid:
-                fastdog_filename = f"{model.uuid}.fastdog"
-                # 检查public路径
-                public_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), fastdog_filename)
-                if os.path.exists(public_fastdog_path):
-                    files_to_delete.append(("fastdog_file", public_fastdog_path))
-                # 检查private路径
-                private_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), fastdog_filename)
-                if os.path.exists(private_fastdog_path):
-                    files_to_delete.append(("fastdog_file", private_fastdog_path))
-            
-            # 先删除文件，再删除数据库记录
-            for field_name, file_path in files_to_delete:
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    # 文件删除失败不影响整体操作
-                    pass
+            # 删除文件
+            self._delete_files_from_disk(files_to_delete)
             
             # 删除数据库记录
             return await super().delete_model(id)
             
         except Exception as e:
             raise e
+    
+    async def _collect_files_to_delete(self, model) -> list:
+        """收集需要删除的文件路径"""
+        files_to_delete = []
+        
+        # 收集模型相关文件
+        files_to_delete.extend(self._collect_model_files(model))
+        
+        # 收集fastdog文件
+        files_to_delete.extend(self._collect_fastdog_files(model))
+        
+        return files_to_delete
+    
+    def _collect_model_files(self, model) -> list:
+        """收集模型的主要文件路径"""
+        files_to_delete = []
+        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+        
+        for field_name in file_fields:
+            file_url = getattr(model, field_name, None)
+            if file_url:
+                file_path = self._get_file_path_from_url(file_url)
+                if file_path and os.path.exists(file_path):
+                    files_to_delete.append((field_name, file_path))
+        
+        return files_to_delete
+    
+    def _collect_fastdog_files(self, model) -> list:
+        """收集fastdog压缩文件路径"""
+        files_to_delete = []
+        
+        if model.uuid:
+            fastdog_filename = f"{model.uuid}.fastdog"
+            
+            # 检查public路径
+            public_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), fastdog_filename)
+            if os.path.exists(public_fastdog_path):
+                files_to_delete.append(("fastdog_file", public_fastdog_path))
+            
+            # 检查private路径
+            private_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), fastdog_filename)
+            if os.path.exists(private_fastdog_path):
+                files_to_delete.append(("fastdog_file", private_fastdog_path))
+        
+        return files_to_delete
+    
+    def _get_file_path_from_url(self, file_url: str) -> str | None:
+        """从文件URL获取实际文件路径"""
+        # 处理public模型路径
+        if file_url.startswith(f"/static{settings.PUBLIC_MODEL_PATH}"):
+            filename = file_url.replace(f"/static{settings.PUBLIC_MODEL_PATH}", "")
+            return os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), filename)
+        
+        # 处理private模型路径
+        elif file_url.startswith(f"/static{settings.PRIVATE_MODEL_PATH}"):
+            filename = file_url.replace(f"/static{settings.PRIVATE_MODEL_PATH}", "")
+            return os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), filename)
+        
+        return None
+    
+    def _delete_files_from_disk(self, files_to_delete: list) -> None:
+        """从磁盘删除文件列表"""
+        for field_name, file_path in files_to_delete:
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                # 文件删除失败不影响整体操作
+                pass
