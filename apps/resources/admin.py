@@ -392,6 +392,7 @@ class Model3DAdmin(TortoiseModelAdmin):
         try:
             # 获取或生成模型UUID
             model_uuid = None
+            existing_model = None
             if id:
                 # 编辑现有模型，获取现有UUID
                 existing_model = await self.model.get(id=id)
@@ -413,6 +414,51 @@ class Model3DAdmin(TortoiseModelAdmin):
                 upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
             else:
                 upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
+            
+            # 如果是编辑现有模型且is_public状态发生变化，需要移动现有文件
+            if existing_model and existing_model.is_public != is_public:
+                import shutil
+                
+                # 确保新目录存在
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                # 获取旧目录
+                if existing_model.is_public:
+                    old_upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
+                else:
+                    old_upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
+                
+                # 移动现有文件并更新URL
+                for field_name in file_fields:
+                    current_url = getattr(existing_model, field_name)
+                    if current_url:
+                        # 从URL中提取文件名
+                        filename = os.path.basename(current_url)
+                        old_file_path = os.path.join(old_upload_dir, filename)
+                        new_file_path = os.path.join(upload_dir, filename)
+                        
+                        # 如果旧文件存在，移动到新位置
+                        if os.path.exists(old_file_path):
+                            try:
+                                shutil.move(old_file_path, new_file_path)
+                                # 更新URL路径
+                                if is_public:
+                                    payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{filename}"
+                                else:
+                                    payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{filename}"
+                            except Exception as e:
+                                print(f"移动文件失败: {old_file_path} -> {new_file_path}, 错误: {e}")
+                
+                # 移动.fastdog文件
+                fastdog_filename = f"{model_uuid}.fastdog"
+                old_fastdog_path = os.path.join(old_upload_dir, fastdog_filename)
+                new_fastdog_path = os.path.join(upload_dir, fastdog_filename)
+                
+                if os.path.exists(old_fastdog_path):
+                    try:
+                        shutil.move(old_fastdog_path, new_fastdog_path)
+                    except Exception as e:
+                        print(f"移动.fastdog文件失败: {old_fastdog_path} -> {new_fastdog_path}, 错误: {e}")
             
             for field_name in file_fields:
                 if field_name in payload and payload[field_name] is not None:
