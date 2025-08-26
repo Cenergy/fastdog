@@ -17,6 +17,9 @@ from typing import List
 from core.settings import settings
 from fastadmin.api.helpers import is_valid_base64
 
+PUBLIC_MODEL_PATH = settings.PUBLIC_MODEL_PATH
+PRIVATE_MODEL_PATH = settings.PRIVATE_MODEL_PATH
+
 
 def detect_file_type_from_data(data: bytes) -> str:
     """使用python-magic检测文件类型并返回合适的扩展名"""
@@ -315,6 +318,9 @@ class Model3DCategoryAdmin(TortoiseModelAdmin):
         "description": CharField(max_length=1024, description="分类描述", required=False),
         "sort_order": CharField(max_length=10, description="排序顺序", required=False)
     }
+    verbose_name="模型分类"
+    # An override to the verbose_name_plural from the model's inner Meta class.
+    verbose_name_plural="模型分类"
 
 @register(Model3D)
 class Model3DAdmin(TortoiseModelAdmin):
@@ -328,6 +334,11 @@ class Model3DAdmin(TortoiseModelAdmin):
     list_per_page = 15
     ordering = ["-created_at"]
     readonly_fields = ["uuid"]  # 设置UUID为只读字段，查看时显示但不可编辑
+
+      # An override to the verbose_name from the model's inner Meta class.
+    verbose_name="模型管理"
+    # An override to the verbose_name_plural from the model's inner Meta class.
+    verbose_name_plural="模型管理"
     
     form_fields = {
         "name": CharField(max_length=255, description="模型名称"),
@@ -367,6 +378,14 @@ class Model3DAdmin(TortoiseModelAdmin):
             "maxFileSize": 10 * 1024 * 1024,  # 10MB
         }) 
     }
+    async def get_model_upload_dir(payload: dict) ->str|None:
+        is_public = payload.get("is_public", False)
+        if is_public:
+            upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
+        else:
+            upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
+        return upload_dir
+
     
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         # 处理上传的模型文件
@@ -387,6 +406,13 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             # 需要处理的文件字段
             file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+            # 检查是否公开
+            is_public = payload.get("is_public", False)
+
+            if is_public:
+                upload_dir = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'))
+            else:
+                upload_dir = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'))
             
             for field_name in file_fields:
                 if field_name in payload and payload[field_name] is not None:
@@ -394,7 +420,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                     if isinstance(file, UploadFile):
                         try:
                             # 确保上传目录存在
-                            upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "models")
+                            # upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "models")
                             os.makedirs(upload_dir, exist_ok=True)
                             
                             # 获取文件扩展名并转换为小写
@@ -425,7 +451,10 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 os.fsync(f.fileno())
                             
                             # 更新文件URL到payload
-                            payload[field_name] = f"/static/uploads/models/{unique_filename}"
+                            if is_public:
+                                payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
+                            else:
+                                payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
                             
                         except Exception as e:
                             raise e
@@ -434,7 +463,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                         import re
                         
                         # 确保上传目录存在
-                        upload_dir = os.path.join(settings.STATIC_DIR, "uploads", "models")
+                        # 使用已经设置的upload_dir变量
                         os.makedirs(upload_dir, exist_ok=True)
                         
                         if field_name == "thumbnail_url":
@@ -467,7 +496,10 @@ class Model3DAdmin(TortoiseModelAdmin):
                                         os.fsync(f.fileno())
                                     
                                     # 更新文件URL到payload
-                                    payload[field_name] = f"/static/uploads/models/{unique_filename}"
+                                    if is_public:
+                                        payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
+                                    else:
+                                        payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
                                     
                                 except Exception as e:
                                     raise ValueError(f"无效的base64图片数据: {str(e)}")
@@ -534,7 +566,10 @@ class Model3DAdmin(TortoiseModelAdmin):
                                         pass  # 生成压缩二进制文件失败，继续处理
                                 
                                 # 更新文件URL到payload
-                                payload[field_name] = f"/static/uploads/models/{unique_filename}"
+                                if is_public:
+                                    payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{unique_filename}"
+                                else:
+                                    payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{unique_filename}"
                                 
                             except Exception as e:
                                 # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
@@ -585,12 +620,31 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             for field_name in file_fields:
                 file_url = getattr(model, field_name, None)
-                if file_url and file_url.startswith("/static/uploads/models/"):
-                    # 从URL转换为实际文件路径
-                    filename = file_url.replace("/static/uploads/models/", "")
-                    file_path = os.path.join(settings.STATIC_DIR, "uploads", "models", filename)
-                    if os.path.exists(file_path):
-                        files_to_delete.append((field_name, file_path))
+                if file_url:
+                    # 处理public模型路径
+                    if file_url.startswith(f"/static{settings.PUBLIC_MODEL_PATH}"):
+                        filename = file_url.replace(f"/static{settings.PUBLIC_MODEL_PATH}", "")
+                        file_path = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), filename)
+                        if os.path.exists(file_path):
+                            files_to_delete.append((field_name, file_path))
+                    # 处理private模型路径
+                    elif file_url.startswith(f"/static{settings.PRIVATE_MODEL_PATH}"):
+                        filename = file_url.replace(f"/static{settings.PRIVATE_MODEL_PATH}", "")
+                        file_path = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), filename)
+                        if os.path.exists(file_path):
+                            files_to_delete.append((field_name, file_path))
+            
+            # 删除自动生成的fastdog文件
+            if model.uuid:
+                fastdog_filename = f"{model.uuid}.fastdog"
+                # 检查public路径
+                public_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), fastdog_filename)
+                if os.path.exists(public_fastdog_path):
+                    files_to_delete.append(("fastdog_file", public_fastdog_path))
+                # 检查private路径
+                private_fastdog_path = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), fastdog_filename)
+                if os.path.exists(private_fastdog_path):
+                    files_to_delete.append(("fastdog_file", private_fastdog_path))
             
             # 先删除文件，再删除数据库记录
             for field_name, file_path in files_to_delete:

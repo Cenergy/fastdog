@@ -82,7 +82,7 @@ class Model3D(models.Model):
     
     # 状态标志
     is_active = fields.BooleanField(default=True, description="是否可用")
-    is_public = fields.BooleanField(default=True, description="是否公开")
+    is_public = fields.BooleanField(default=False, description="是否公开")
     
     class Meta:
         table = "models_3d"

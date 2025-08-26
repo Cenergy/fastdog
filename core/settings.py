@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # ==================== 基础应用配置 ====================
     PROJECT_NAME: str = "Fast Go Go"
     API_V1_STR: str = "/api/v1"
+    PROJECT_DIR: str = os.path.dirname(os.path.dirname(__file__))
     STATIC_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     SECRET_KEY: str = "YOUR_SECRET_KEY_HERE"  # 在生产环境中应该使用环境变量
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
@@ -109,6 +110,8 @@ class Settings(BaseSettings):
     PROTECTED_FILE_ENABLE: bool = True  # 是否启用文件访问保护功能
     PROTECTED_FILE_EXTENSIONS: List[str] = [".gltf", ".glb", ".fastdog"]  # 受保护的文件扩展名
     PROTECTED_FILE_PATHS: List[str] = ["/uploads/models/"]  # 受保护的文件路径
+    PUBLIC_MODEL_PATH: str = "/uploads/model/"  # 公开模型路径
+    PRIVATE_MODEL_PATH: str = "/uploads/models/"  # 私有模型路径
     
     # 坐标转换线程池设置
     CONVERTERS_THREAD_POOL_THRESHOLD: int = 1000  # 启用线程池的数据行数阈值
