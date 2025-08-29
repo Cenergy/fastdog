@@ -595,8 +595,17 @@ async def count_model3ds_api(
     )
 
 
-@router.api_route("/models/uuid/{uuid}", methods=["GET", "HEAD"])
-async def stream_model_by_uuid(request: Request, uuid: str, range: str = Header(None)):
+@router.get("/models/uuid/{uuid}")
+async def stream_model_by_uuid_get(request: Request, uuid: str, range: str = Header(None)):
+    """根据模型UUID以自定义二进制格式流式传输模型"""
+    return await _stream_model_by_uuid_impl(request, uuid, range)
+
+@router.head("/models/uuid/{uuid}")
+async def stream_model_by_uuid_head(request: Request, uuid: str, range: str = Header(None)):
+    """根据模型UUID获取流式传输模型的头信息"""
+    return await _stream_model_by_uuid_impl(request, uuid, range)
+
+async def _stream_model_by_uuid_impl(request: Request, uuid: str, range: str = Header(None)):
     """根据模型UUID以自定义二进制格式流式传输模型"""
     # 首先从数据库获取模型信息
     model = await get_model3d_by_uuid(uuid)

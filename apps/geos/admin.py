@@ -103,42 +103,7 @@ class GeoModelAdmin(TortoiseModelAdmin):
     # 设置中文显示名称
     verbose_name = "地理位置模型"
     verbose_name_plural = "地理位置模型"
-    
-    form_fields = {
-        "name": CharField(max_length=255, description="地理模型名称"),
-        "description": TextField(description="地理模型描述", required=False),
-        "model_3d": CharField(max_length=255, description="关联的3D模型"),
-        
-        # 地理位置信息
-        "longitude": DecimalField(max_digits=10, decimal_places=7, description="经度 (-180 到 180)"),
-        "latitude": DecimalField(max_digits=10, decimal_places=7, description="纬度 (-90 到 90)"),
-        "altitude": DecimalField(max_digits=10, decimal_places=3, description="海拔高度(米)", required=False),
-        
-        # 模型姿态信息
-        "pitch": DecimalField(max_digits=6, decimal_places=3, description="俯仰角(度) -90到90", required=False),
-        "yaw": DecimalField(max_digits=6, decimal_places=3, description="偏航角(度) 0到360", required=False),
-        "roll": DecimalField(max_digits=6, decimal_places=3, description="翻滚角(度) -180到180", required=False),
-        
-        # 缩放信息
-        "scale_x": DecimalField(max_digits=6, decimal_places=3, description="X轴缩放比例", required=False),
-        "scale_y": DecimalField(max_digits=6, decimal_places=3, description="Y轴缩放比例", required=False),
-        "scale_z": DecimalField(max_digits=6, decimal_places=3, description="Z轴缩放比例", required=False),
-        
-        # 显示控制
-        "is_visible": BooleanField(description="是否在地图上显示", required=False),
-        "is_interactive": BooleanField(description="是否可交互(点击、选择等)", required=False),
-        
-        # 层级控制
-        "layer_name": CharField(max_length=100, description="图层名称", required=False),
-        "z_index": IntField(description="显示层级，数值越大越靠前", required=False),
-        
-        # 可见性控制
-        "min_zoom_level": DecimalField(max_digits=4, decimal_places=2, description="最小可见缩放级别", required=False),
-        "max_zoom_level": DecimalField(max_digits=4, decimal_places=2, description="最大可见缩放级别", required=False),
-        
-        # 元数据
-        "metadata": TextField(description="额外的元数据信息(JSON格式)", required=False),
-    }
+
     
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         """保存模型时的数据验证和处理"""

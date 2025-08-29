@@ -486,6 +486,10 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 保存文件
             self._save_file_to_disk(file_path, content)
             
+            # 如果是3D模型文件，同时生成压缩的二进制文件
+            if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
+                await self._generate_compressed_model(content, model_uuid, upload_dir, file_ext)
+            
             # 更新文件URL到payload
             payload[field_name] = self._generate_file_url(unique_filename, is_public)
             
@@ -573,7 +577,7 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             # 如果是3D模型文件，同时生成压缩的二进制文件
             if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                await self._generate_compressed_model(model_data, model_uuid, upload_dir)
+                await self._generate_compressed_model(model_data, model_uuid, upload_dir, file_ext)
             
             # 更新文件URL到payload
             payload[field_name] = self._generate_file_url(unique_filename, is_public)
@@ -582,11 +586,11 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
             payload.pop(field_name, None)
     
-    async def _generate_compressed_model(self, model_data: bytes, model_uuid: str, upload_dir: str) -> None:
+    async def _generate_compressed_model(self, model_data: bytes, model_uuid: str, upload_dir: str, file_ext: str) -> None:
         """生成压缩的3D模型文件"""
         try:
-            # 使用统一的转换函数处理各种格式
-            compressed_data = convert_model_to_binary(model_data, ".gltf")  # 假设使用gltf格式
+            # 使用统一的转换函数处理各种格式，传入正确的文件扩展名
+            compressed_data = convert_model_to_binary(model_data, file_ext)
             
             # 保存压缩文件
             compressed_filename = f"{str(model_uuid)}.fastdog"
@@ -595,7 +599,10 @@ class Model3DAdmin(TortoiseModelAdmin):
             self._save_file_to_disk(compressed_file_path, compressed_data)
             
         except Exception as e:
-            pass  # 生成压缩二进制文件失败，继续处理
+            # 记录错误但不中断主流程
+            print(f"生成压缩模型文件失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     async def save_model(self, id: UUID | int | None, payload: dict) -> dict | None:
         """保存模型，处理文件上传和数据库操作"""

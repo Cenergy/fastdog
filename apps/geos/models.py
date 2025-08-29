@@ -33,12 +33,12 @@ class GeoModel(models.Model):
     category = fields.ForeignKeyField('models.GeoCategory', related_name='geo_models', description="所属分类", null=True)
     
     # 关联的3D模型
-    model_3d = fields.ForeignKeyField('models.Model3D', related_name='geo_instances', description="关联的3D模型")
+    model_3d = fields.ForeignKeyField('models.Model3D', related_name='geo_instances', description="关联的3D模型",null=True)
     
     # 地理位置信息
-    longitude = fields.DecimalField(max_digits=10, decimal_places=7, description="经度 (-180 到 180)", validators=[lambda x: -180 <= x <= 180])
-    latitude = fields.DecimalField(max_digits=10, decimal_places=7, description="纬度 (-90 到 90)", validators=[lambda x: -90 <= x <= 90])
-    altitude = fields.DecimalField(max_digits=10, decimal_places=3, description="海拔高度(米)", default=0,)
+    longitude = fields.DecimalField(max_digits=10, decimal_places=6, description="经度 (-180 到 180)", validators=[lambda x: -180 <= x <= 180])
+    latitude = fields.DecimalField(max_digits=10, decimal_places=6, description="纬度 (-90 到 90)", validators=[lambda x: -90 <= x <= 90])
+    altitude = fields.DecimalField(max_digits=10, decimal_places=3, description="海拔高度(米)", default=0,required=False, null=True)
     
     # 模型姿态信息
     pitch = fields.DecimalField(max_digits=6, decimal_places=3, description="俯仰角(度) -90到90", null=True)
@@ -57,7 +57,7 @@ class GeoModel(models.Model):
     
     # 层级控制
     layer_name = fields.CharField(max_length=100, description="图层名称", null=True)
-    z_index = fields.IntField(default=0, description="显示层级，数值越大越靠前")
+    z_index = fields.IntField(default=0, description="显示层级，数值越大越靠前",required=False, null=True)
     
     # 可见性控制
     min_zoom_level = fields.DecimalField(max_digits=4, decimal_places=2, description="最小可见缩放级别", null=True)
