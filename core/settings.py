@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     
     # 文件访问保护配置
     PROTECTED_FILE_ENABLE: bool = True  # 是否启用文件访问保护功能
-    PROTECTED_FILE_EXTENSIONS: List[str] = [".gltf", ".glb", ".fastdog"]  # 受保护的文件扩展名
+    PROTECTED_FILE_EXTENSIONS: List[str] = [".gltf", ".glb", ".fbx",".fastdog"]  # 受保护的文件扩展名
     PROTECTED_FILE_PATHS: List[str] = ["/uploads/models/"]  # 受保护的文件路径
     PUBLIC_MODEL_PATH: str = "/uploads/model/"  # 公开模型路径
     PRIVATE_MODEL_PATH: str = "/uploads/models/"  # 私有模型路径
