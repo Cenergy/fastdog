@@ -464,6 +464,33 @@ class Model3DAdmin(TortoiseModelAdmin):
             except Exception as e:
                 print(f"移动.fastdog文件失败: {old_fastdog_path} -> {new_fastdog_path}, 错误: {e}")
     
+    def _update_gltf_bin_references(self, gltf_content: bytes, model_uuid: str) -> bytes:
+        """更新GLTF文件中的bin文件引用路径"""
+        try:
+            # 解析GLTF JSON内容
+            gltf_text = gltf_content.decode('utf-8')
+            gltf_data = json.loads(gltf_text)
+            
+            # 检查是否有buffers字段
+            if 'buffers' in gltf_data:
+                for buffer in gltf_data['buffers']:
+                    if 'uri' in buffer:
+                        # 获取原始bin文件名
+                        original_uri = buffer['uri']
+                        # 如果是相对路径的bin文件，更新为新的文件名
+                        if original_uri.endswith('.bin') and not original_uri.startswith('http'):
+                            # 更新为使用模型UUID的文件名
+                            buffer['uri'] = f"{model_uuid}.bin"
+            
+            # 将更新后的JSON转换回字节
+            updated_gltf_text = json.dumps(gltf_data, separators=(',', ':'))
+            return updated_gltf_text.encode('utf-8')
+            
+        except Exception as e:
+            # 如果解析失败，返回原始内容
+            print(f"更新GLTF bin引用失败: {str(e)}")
+            return gltf_content
+    
     async def _process_upload_file(self, file: UploadFile, field_name: str, model_uuid: str, upload_dir: str, is_public: bool, payload: dict) -> None:
         """处理UploadFile文件上传"""
         try:
@@ -482,6 +509,10 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             # 读取文件内容
             content = await file.read()
+            
+            # 如果是GLTF文件，需要更新其中的bin文件引用
+            if field_name == "model_file_url" and file_ext == ".gltf":
+                content = self._update_gltf_bin_references(content, model_uuid)
             
             # 保存文件
             self._save_file_to_disk(file_path, content)
@@ -630,6 +661,34 @@ class Model3DAdmin(TortoiseModelAdmin):
         except Exception as e:
             raise e
     
+    async def _update_gltf_after_binary_upload(self, model_uuid: str, upload_dir: str, payload: dict) -> None:
+        """在binary文件上传后更新对应的GLTF文件中的bin引用，并重新生成.fastdog文件"""
+        try:
+            # 检查是否有GLTF文件需要更新
+            gltf_filename = f"{model_uuid}.gltf"
+            gltf_path = os.path.join(upload_dir, gltf_filename)
+            
+            # 如果GLTF文件存在，更新其bin引用
+            if os.path.exists(gltf_path):
+                with open(gltf_path, 'rb') as f:
+                    gltf_content = f.read()
+                
+                # 更新bin引用
+                updated_content = self._update_gltf_bin_references(gltf_content, model_uuid)
+                
+                # 写回文件
+                with open(gltf_path, 'wb') as f:
+                    f.write(updated_content)
+                
+                print(f"已更新GLTF文件中的bin引用: {gltf_path}")
+                
+                # 重新生成.fastdog压缩文件，使用更新后的GLTF内容
+                await self._generate_compressed_model(updated_content, model_uuid, upload_dir, ".gltf")
+                print(f"已重新生成.fastdog压缩文件: {model_uuid}.fastdog")
+                
+        except Exception as e:
+            print(f"更新GLTF文件bin引用或重新生成.fastdog文件失败: {str(e)}")
+    
     async def _handle_file_operations(self, id: UUID | int | None, model_uuid: str, existing_model, payload: dict) -> None:
         """处理所有文件相关操作"""
         # 需要处理的文件字段
@@ -643,16 +702,27 @@ class Model3DAdmin(TortoiseModelAdmin):
             await self._move_files_for_public_status_change(existing_model, model_uuid, is_public, file_fields, payload)
         
         # 处理文件上传
+        binary_file_uploaded = False
         for field_name in file_fields:
             if field_name in payload and payload[field_name] is not None:
                 file = payload[field_name]
                 if isinstance(file, UploadFile):
                     await self._process_upload_file(file, field_name, model_uuid, upload_dir, is_public, payload)
+                    # 记录是否上传了binary文件
+                    if field_name == "binary_file_url":
+                        binary_file_uploaded = True
                 elif isinstance(file, str) and (is_valid_base64(file) or file.startswith('data:')):
                     if field_name == "thumbnail_url":
                         await self._process_base64_thumbnail(file, model_uuid, upload_dir, is_public, payload, field_name)
                     else:
                         await self._process_base64_model_file(file, field_name, model_uuid, upload_dir, is_public, payload)
+                        # 记录是否上传了binary文件
+                        if field_name == "binary_file_url":
+                            binary_file_uploaded = True
+        
+        # 如果上传了binary文件，检查并更新对应的GLTF文件
+        if binary_file_uploaded:
+            await self._update_gltf_after_binary_upload(model_uuid, upload_dir, payload)
     
     def _validate_and_clean_file_urls(self, payload: dict) -> None:
         """验证文件URL字段长度，确保不超过数据库限制"""
