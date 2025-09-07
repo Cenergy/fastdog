@@ -73,7 +73,9 @@ class Model3D(models.Model):
     
     # 模型文件
     model_file_url = fields.TextField(description="主模型文件URL", null=True)
+    binary_original_name = fields.CharField(max_length=255, description="二进制文件原始名称", null=True)
     binary_file_url = fields.TextField(description="二进制文件URL(用于GLB+BIN)", null=True)
+    thumbnail_original_name = fields.CharField(max_length=255, description="预览图原始名称", null=True)
     thumbnail_url = fields.TextField(description="预览图URL", null=True)
     
     # 时间戳
