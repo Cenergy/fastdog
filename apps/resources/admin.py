@@ -733,14 +733,16 @@ class Model3DAdmin(TortoiseModelAdmin):
             compressed_data = convert_model_to_binary(model_data, file_ext)
             
             # 根据模型文件名生成fastdog文件名
-            if model_filename:
-                # 使用模型文件的名称（不含扩展名）+ .fastdog
-                base_name = os.path.splitext(model_filename)[0]
-                compressed_filename = f"{base_name}.fastdog"
-            else:
-                # 回退到默认名称
-                compressed_filename = "binary.fastdog"
-                base_name = "binary"
+            # if model_filename:
+            #     # 使用模型文件的名称（不含扩展名）+ .fastdog
+            #     base_name = os.path.splitext(model_filename)[0]
+            #     compressed_filename = f"{base_name}.fastdog"
+            # else:
+            #     # 回退到默认名称
+            #     compressed_filename = "binary.fastdog"
+            #     base_name = "binary"
+            # 压缩文件统一命名为model.fastdog
+            compressed_filename = "model.fastdog"
             
             compressed_file_path = os.path.join(upload_dir, compressed_filename)
             
