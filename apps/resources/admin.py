@@ -345,8 +345,11 @@ class Model3DAdmin(TortoiseModelAdmin):
         "description": TextField(description="模型描述", required=False),
         "category": CharField(max_length=255, description="所属分类", required=False),
         "model_file_url": TextField(description="模型文件", required=False),
+        "model_file_name": CharField(max_length=255, description="模型文件名", required=False),
         "binary_file_url": TextField(description="二进制文件", required=False),
-        "thumbnail_url": TextField(description="预览图", required=False)
+        "binary_file_name": CharField(max_length=255, description="二进制文件名", required=False),
+        "thumbnail_url": TextField(description="预览图", required=False),
+        "thumbnail_file_name": CharField(max_length=255, description="预览图文件名", required=False)
     }
     formfield_overrides = {  # noqa: RUF012
           "model_file_url": (WidgetType.Upload, {
@@ -426,7 +429,7 @@ class Model3DAdmin(TortoiseModelAdmin):
         return model_uuid, existing_model
     
     async def _move_files_for_public_status_change(self, existing_model, model_uuid: str, is_public: bool, file_fields: list, payload: dict) -> None:
-        """当is_public状态变化时移动文件"""
+        """当is_public状态变化时移动整个UUID文件夹"""
         import shutil
         
         upload_dir = self._get_upload_directory(is_public)
@@ -434,6 +437,42 @@ class Model3DAdmin(TortoiseModelAdmin):
         
         # 确保新目录存在
         os.makedirs(upload_dir, exist_ok=True)
+        
+        # 检查是否存在UUID文件夹
+        old_uuid_folder = os.path.join(old_upload_dir, model_uuid)
+        new_uuid_folder = os.path.join(upload_dir, model_uuid)
+        
+        if os.path.exists(old_uuid_folder):
+            try:
+                # 移动整个UUID文件夹
+                if os.path.exists(new_uuid_folder):
+                    # 如果目标文件夹已存在，先删除它
+                    shutil.rmtree(new_uuid_folder)
+                
+                shutil.move(old_uuid_folder, new_uuid_folder)
+                print(f"已移动UUID文件夹: {old_uuid_folder} -> {new_uuid_folder}")
+                
+                # 更新所有文件URL路径
+                for field_name in file_fields:
+                    current_url = getattr(existing_model, field_name)
+                    if current_url and '/' in current_url:
+                        # 提取相对路径（包含UUID文件夹）
+                        url_parts = current_url.split('/')
+                        if len(url_parts) >= 2:
+                            relative_path = '/'.join(url_parts[-2:])  # UUID文件夹/文件名
+                            payload[field_name] = self._generate_file_url(relative_path, is_public)
+                            
+            except Exception as e:
+                print(f"移动UUID文件夹失败: {old_uuid_folder} -> {new_uuid_folder}, 错误: {e}")
+                # 如果移动文件夹失败，回退到移动单个文件的逻辑
+                await self._move_individual_files_fallback(existing_model, model_uuid, is_public, file_fields, payload, old_upload_dir, upload_dir)
+        else:
+            # 如果没有UUID文件夹，使用旧的单个文件移动逻辑（兼容性）
+            await self._move_individual_files_fallback(existing_model, model_uuid, is_public, file_fields, payload, old_upload_dir, upload_dir)
+    
+    async def _move_individual_files_fallback(self, existing_model, model_uuid: str, is_public: bool, file_fields: list, payload: dict, old_upload_dir: str, upload_dir: str) -> None:
+        """兼容性方法：移动单个文件（用于旧格式）"""
+        import shutil
         
         # 移动现有文件并更新URL
         for field_name in file_fields:
@@ -450,6 +489,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                         shutil.move(old_file_path, new_file_path)
                         # 更新URL路径
                         payload[field_name] = self._generate_file_url(filename, is_public)
+                        print(f"已移动文件: {old_file_path} -> {new_file_path}")
                     except Exception as e:
                         print(f"移动文件失败: {old_file_path} -> {new_file_path}, 错误: {e}")
         
@@ -461,24 +501,52 @@ class Model3DAdmin(TortoiseModelAdmin):
         if os.path.exists(old_fastdog_path):
             try:
                 shutil.move(old_fastdog_path, new_fastdog_path)
+                print(f"已移动.fastdog文件: {old_fastdog_path} -> {new_fastdog_path}")
             except Exception as e:
                 print(f"移动.fastdog文件失败: {old_fastdog_path} -> {new_fastdog_path}, 错误: {e}")
     
     async def _process_upload_file(self, file: UploadFile, field_name: str, model_uuid: str, upload_dir: str, is_public: bool, payload: dict) -> None:
         """处理UploadFile文件上传"""
         try:
-            # 确保上传目录存在
-            os.makedirs(upload_dir, exist_ok=True)
+            # 创建UUID文件夹
+            uuid_dir = os.path.join(upload_dir, model_uuid)
+            os.makedirs(uuid_dir, exist_ok=True)
             
-            # 获取文件扩展名并转换为小写
-            file_ext = os.path.splitext(file.filename)[1].lower()
+            # 获取原文件名和扩展名
+            original_filename = file.filename
+            file_ext = os.path.splitext(original_filename)[1].lower()
             
             # 验证文件格式
             self._validate_file_type(field_name, file_ext)
             
-            # 使用模型UUID生成文件名
-            unique_filename = f"{str(model_uuid)}{file_ext}"
-            file_path = os.path.join(upload_dir, unique_filename)
+            # 确定保存的文件名
+            if field_name == "model_file_url":
+                # 主模型文件：优先使用原文件名，否则使用"model"
+                if original_filename:
+                    save_filename = original_filename
+                else:
+                    save_filename = f"model{file_ext}"
+            elif field_name == "binary_file_url":
+                # 二进制文件：优先使用binary_file_name字段，否则使用原文件名，最后使用"binary"
+                if payload.get("binary_file_name"):
+                    save_filename = f"{payload['binary_file_name']}{file_ext}"
+                elif original_filename:
+                    save_filename = original_filename
+                else:
+                    save_filename = f"binary{file_ext}"
+            elif field_name == "thumbnail_url":
+                # 预览图：优先使用原文件名，否则使用thumbnail_file_name字段，最后使用"thumbnail"
+                if original_filename:
+                    save_filename = original_filename
+                elif payload.get("thumbnail_file_name"):
+                    save_filename = payload["thumbnail_file_name"]
+                else:
+                    save_filename = f"thumbnail{file_ext}"
+            else:
+                save_filename = original_filename or f"file{file_ext}"
+            
+            # 构建完整文件路径
+            file_path = os.path.join(uuid_dir, save_filename)
             
             # 读取文件内容
             content = await file.read()
@@ -486,12 +554,23 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 保存文件
             self._save_file_to_disk(file_path, content)
             
-            # 如果是3D模型文件，同时生成压缩的二进制文件
+            # 如果是3D模型文件，同时生成压缩的二进制文件（但不覆盖用户上传的binary_file_url）
             if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                await self._generate_compressed_model(content, model_uuid, upload_dir, file_ext)
+                # 只有在用户没有上传binary_file_url时才自动生成
+                if "binary_file_url" not in payload or not payload["binary_file_url"]:
+                    await self._generate_compressed_model(content, model_uuid, uuid_dir, file_ext, save_filename, payload)
             
-            # 更新文件URL到payload
-            payload[field_name] = self._generate_file_url(unique_filename, is_public)
+            # 更新文件URL到payload（包含UUID文件夹路径）
+            relative_path = f"{model_uuid}/{save_filename}"
+            payload[field_name] = self._generate_file_url(relative_path, is_public)
+            
+            # 保存实际使用的文件名到对应的字段（不带扩展名）
+            if field_name == "model_file_url":
+                payload["model_file_name"] = os.path.splitext(save_filename)[0]
+            elif field_name == "binary_file_url":
+                payload["binary_file_name"] = os.path.splitext(save_filename)[0]
+            elif field_name == "thumbnail_url":
+                payload["thumbnail_file_name"] = os.path.splitext(save_filename)[0]
             
         except Exception as e:
              raise e
@@ -522,15 +601,20 @@ class Model3DAdmin(TortoiseModelAdmin):
                 if file_ext not in [".jpg", ".png", ".gif", ".webp"]:
                     raise ValueError(f"缩略图不支持的格式: {file_ext}")
                 
-                # 使用模型UUID生成文件名
-                unique_filename = f"{str(model_uuid)}{file_ext}"
-                file_path = os.path.join(upload_dir, unique_filename)
+                # 创建UUID文件夹
+                uuid_dir = os.path.join(upload_dir, str(model_uuid))
+                os.makedirs(uuid_dir, exist_ok=True)
+                
+                # 确定文件名（缩略图默认为thumbnail）
+                filename = f"thumbnail{file_ext}"
+                file_path = os.path.join(uuid_dir, filename)
                 
                 # 保存文件
                 self._save_file_to_disk(file_path, image_data)
                 
-                # 更新文件URL到payload
-                payload[field_name] = self._generate_file_url(unique_filename, is_public)
+                # 更新文件URL到payload（包含UUID文件夹路径）
+                relative_path = f"{str(model_uuid)}/{filename}"
+                payload[field_name] = self._generate_file_url(relative_path, is_public)
                 
             except Exception as e:
                 raise ValueError(f"无效的base64图片数据: {str(e)}")
@@ -568,35 +652,65 @@ class Model3DAdmin(TortoiseModelAdmin):
                 if file_ext not in [".bin", ".glb", ".fastdog"]:
                     raise ValueError(f"二进制文件不支持的格式: {file_ext}")
             
-            # 使用模型UUID生成文件名
-            unique_filename = f"{str(model_uuid)}{file_ext}"
-            file_path = os.path.join(upload_dir, unique_filename)
+            # 创建UUID文件夹
+            uuid_dir = os.path.join(upload_dir, str(model_uuid))
+            os.makedirs(uuid_dir, exist_ok=True)
+            
+            # 确定文件名
+            if field_name == "model_file_url":
+                filename = f"model{file_ext}"
+            elif field_name == "binary_file_url":
+                filename = f"binary{file_ext}"
+            else:
+                filename = f"{str(model_uuid)}{file_ext}"
+            
+            file_path = os.path.join(uuid_dir, filename)
             
             # 保存文件
             self._save_file_to_disk(file_path, model_data)
             
-            # 如果是3D模型文件，同时生成压缩的二进制文件
+            # 如果是3D模型文件，同时生成压缩的二进制文件（但不覆盖用户上传的binary_file_url）
             if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                await self._generate_compressed_model(model_data, model_uuid, upload_dir, file_ext)
+                # 只有在用户没有上传binary_file_url时才自动生成
+                if "binary_file_url" not in payload or not payload["binary_file_url"]:
+                    await self._generate_compressed_model(model_data, model_uuid, uuid_dir, file_ext, filename, payload)
             
-            # 更新文件URL到payload
-            payload[field_name] = self._generate_file_url(unique_filename, is_public)
+            # 更新文件URL到payload（包含UUID文件夹路径）
+            relative_path = f"{str(model_uuid)}/{filename}"
+            payload[field_name] = self._generate_file_url(relative_path, is_public)
             
         except Exception as e:
             # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
             payload.pop(field_name, None)
     
-    async def _generate_compressed_model(self, model_data: bytes, model_uuid: str, upload_dir: str, file_ext: str) -> None:
+    async def _generate_compressed_model(self, model_data: bytes, model_uuid: str, upload_dir: str, file_ext: str, model_filename: str = None, payload: dict = None) -> None:
         """生成压缩的3D模型文件"""
         try:
             # 使用统一的转换函数处理各种格式，传入正确的文件扩展名
             compressed_data = convert_model_to_binary(model_data, file_ext)
             
-            # 保存压缩文件
-            compressed_filename = f"{str(model_uuid)}.fastdog"
+            # 根据模型文件名生成fastdog文件名
+            if model_filename:
+                # 使用模型文件的名称（不含扩展名）+ .fastdog
+                base_name = os.path.splitext(model_filename)[0]
+                compressed_filename = f"{base_name}.fastdog"
+            else:
+                # 回退到默认名称
+                compressed_filename = "binary.fastdog"
+                base_name = "binary"
+            
             compressed_file_path = os.path.join(upload_dir, compressed_filename)
             
             self._save_file_to_disk(compressed_file_path, compressed_data)
+            
+            # 如果提供了payload，更新binary文件信息
+            if payload is not None:
+                # 生成binary文件URL
+                relative_path = f"{model_uuid}/{compressed_filename}"
+                is_public = payload.get('is_public', False)
+                payload['binary_file_url'] = self._generate_file_url(relative_path, is_public)
+                # 保存不带扩展名的文件名到数据库
+                payload['binary_file_name'] = base_name
             
         except Exception as e:
             # 记录错误但不中断主流程
@@ -642,6 +756,10 @@ class Model3DAdmin(TortoiseModelAdmin):
         if existing_model and existing_model.is_public != is_public:
             await self._move_files_for_public_status_change(existing_model, model_uuid, is_public, file_fields, payload)
         
+        # 处理文件名变更（编辑时重命名现有文件）
+        if existing_model:
+            await self._handle_filename_changes(existing_model, model_uuid, upload_dir, payload)
+        
         # 处理文件上传
         for field_name in file_fields:
             if field_name in payload and payload[field_name] is not None:
@@ -672,10 +790,13 @@ class Model3DAdmin(TortoiseModelAdmin):
         if result:
             saved_model = await self.model.get(id=result["id"])
             
-            # 如果文件URL没有正确保存，尝试直接更新
+            # 如果文件URL和文件名没有正确保存，尝试直接更新
             file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
+            filename_fields = ["model_file_name", "binary_file_name", "thumbnail_file_name"]
+            all_fields = file_fields + filename_fields
+            
             update_needed = False
-            for field_name in file_fields:
+            for field_name in all_fields:
                 if field_name in payload and payload[field_name] and getattr(saved_model, field_name) != payload[field_name]:
                     setattr(saved_model, field_name, payload[field_name])
                     update_needed = True
@@ -684,6 +805,111 @@ class Model3DAdmin(TortoiseModelAdmin):
                 await saved_model.save()
         
         return result
+    
+    async def _handle_filename_changes(self, existing_model, model_uuid: str, upload_dir: str, payload: dict) -> None:
+        """处理编辑时的文件名变更，重命名磁盘上的现有文件"""
+        try:
+            uuid_dir = os.path.join(upload_dir, model_uuid)
+            
+            # 处理binary_file_name变更
+            if "binary_file_name" in payload and payload["binary_file_name"]:
+                new_binary_name = payload["binary_file_name"]
+                
+                # 检查是否有现有的binary文件URL
+                if existing_model.binary_file_url:
+                    # 从URL中提取当前文件名
+                    current_file_path = self._get_file_path_from_url(existing_model.binary_file_url)
+                    if current_file_path and os.path.exists(current_file_path):
+                        current_filename = os.path.basename(current_file_path)
+                        
+                        # 如果文件名不同，进行重命名
+                        if current_filename != new_binary_name:
+                            # 确保新文件名有正确的扩展名
+                            current_ext = os.path.splitext(current_filename)[1]
+                            if not new_binary_name.endswith(current_ext):
+                                new_binary_name += current_ext
+                            
+                            new_file_path = os.path.join(uuid_dir, new_binary_name)
+                            
+                            # 重命名文件
+                            if not os.path.exists(new_file_path):  # 避免覆盖现有文件
+                                os.rename(current_file_path, new_file_path)
+                                print(f"重命名binary文件: {current_filename} -> {new_binary_name}")
+                                
+                                # 更新URL
+                                is_public = payload.get("is_public", existing_model.is_public)
+                                relative_path = f"{model_uuid}/{new_binary_name}"
+                                payload["binary_file_url"] = self._generate_file_url(relative_path, is_public)
+                                # 保存不带扩展名的文件名
+                                payload["binary_file_name"] = os.path.splitext(new_binary_name)[0]
+            
+            # 处理model_file_name变更
+            if "model_file_name" in payload and payload["model_file_name"]:
+                new_model_name = payload["model_file_name"]
+                
+                # 检查是否有现有的model文件URL
+                if existing_model.model_file_url:
+                    # 从URL中提取当前文件名
+                    current_file_path = self._get_file_path_from_url(existing_model.model_file_url)
+                    if current_file_path and os.path.exists(current_file_path):
+                        current_filename = os.path.basename(current_file_path)
+                        
+                        # 如果文件名不同，进行重命名
+                        if current_filename != new_model_name:
+                            # 确保新文件名有正确的扩展名
+                            current_ext = os.path.splitext(current_filename)[1]
+                            if not new_model_name.endswith(current_ext):
+                                new_model_name += current_ext
+                            
+                            new_file_path = os.path.join(uuid_dir, new_model_name)
+                            
+                            # 重命名文件
+                            if not os.path.exists(new_file_path):  # 避免覆盖现有文件
+                                os.rename(current_file_path, new_file_path)
+                                print(f"重命名model文件: {current_filename} -> {new_model_name}")
+                                
+                                # 更新URL
+                                is_public = payload.get("is_public", existing_model.is_public)
+                                relative_path = f"{model_uuid}/{new_model_name}"
+                                payload["model_file_url"] = self._generate_file_url(relative_path, is_public)
+                                # 保存不带扩展名的文件名
+                                payload["model_file_name"] = os.path.splitext(new_model_name)[0]
+            
+            # 处理thumbnail_file_name变更
+            if "thumbnail_file_name" in payload and payload["thumbnail_file_name"]:
+                new_thumbnail_name = payload["thumbnail_file_name"]
+                
+                # 检查是否有现有的thumbnail文件URL
+                if existing_model.thumbnail_url:
+                    # 从URL中提取当前文件名
+                    current_file_path = self._get_file_path_from_url(existing_model.thumbnail_url)
+                    if current_file_path and os.path.exists(current_file_path):
+                        current_filename = os.path.basename(current_file_path)
+                        
+                        # 如果文件名不同，进行重命名
+                        if current_filename != new_thumbnail_name:
+                            # 确保新文件名有正确的扩展名
+                            current_ext = os.path.splitext(current_filename)[1]
+                            if not new_thumbnail_name.endswith(current_ext):
+                                new_thumbnail_name += current_ext
+                            
+                            new_file_path = os.path.join(uuid_dir, new_thumbnail_name)
+                            
+                            # 重命名文件
+                            if not os.path.exists(new_file_path):  # 避免覆盖现有文件
+                                os.rename(current_file_path, new_file_path)
+                                print(f"重命名thumbnail文件: {current_filename} -> {new_thumbnail_name}")
+                                
+                                # 更新URL
+                                is_public = payload.get("is_public", existing_model.is_public)
+                                relative_path = f"{model_uuid}/{new_thumbnail_name}"
+                                payload["thumbnail_url"] = self._generate_file_url(relative_path, is_public)
+                                # 保存不带扩展名的文件名
+                                payload["thumbnail_file_name"] = os.path.splitext(new_thumbnail_name)[0]
+                                
+        except Exception as e:
+            print(f"处理文件名变更时出错: {str(e)}")
+            # 不抛出异常，避免影响主流程
     
     async def delete_model(self, id: str) -> bool:
         """删除模型时同时删除相关文件"""
@@ -704,16 +930,37 @@ class Model3DAdmin(TortoiseModelAdmin):
             raise e
     
     async def _collect_files_to_delete(self, model) -> list:
-        """收集需要删除的文件路径"""
-        files_to_delete = []
+        """收集需要删除的文件路径 - 现在删除整个UUID文件夹"""
+        folders_to_delete = []
+        
+        if model.uuid:
+            # 检查public路径的UUID文件夹
+            public_uuid_folder = os.path.join(settings.STATIC_DIR, settings.PUBLIC_MODEL_PATH.lstrip('/'), model.uuid)
+            if os.path.exists(public_uuid_folder):
+                folders_to_delete.append(("uuid_folder", public_uuid_folder))
+            
+            # 检查private路径的UUID文件夹
+            private_uuid_folder = os.path.join(settings.STATIC_DIR, settings.PRIVATE_MODEL_PATH.lstrip('/'), model.uuid)
+            if os.path.exists(private_uuid_folder):
+                folders_to_delete.append(("uuid_folder", private_uuid_folder))
+            
+            # 兼容旧格式：检查是否有旧的单个文件需要删除
+            old_files = self._collect_legacy_files(model)
+            folders_to_delete.extend(old_files)
+        
+        return folders_to_delete
+    
+    def _collect_legacy_files(self, model) -> list:
+        """收集旧格式的单个文件（兼容性）"""
+        legacy_files = []
         
         # 收集模型相关文件
-        files_to_delete.extend(self._collect_model_files(model))
+        legacy_files.extend(self._collect_model_files(model))
         
         # 收集fastdog文件
-        files_to_delete.extend(self._collect_fastdog_files(model))
+        legacy_files.extend(self._collect_fastdog_files(model))
         
-        return files_to_delete
+        return legacy_files
     
     def _collect_model_files(self, model) -> list:
         """收集模型的主要文件路径"""
@@ -763,10 +1010,20 @@ class Model3DAdmin(TortoiseModelAdmin):
         return None
     
     def _delete_files_from_disk(self, files_to_delete: list) -> None:
-        """从磁盘删除文件列表"""
-        for field_name, file_path in files_to_delete:
+        """从磁盘删除文件和文件夹列表"""
+        import shutil
+        
+        for item_type, path in files_to_delete:
             try:
-                os.remove(file_path)
+                if item_type == "uuid_folder" and os.path.isdir(path):
+                    # 删除整个UUID文件夹
+                    shutil.rmtree(path)
+                    print(f"已删除UUID文件夹: {path}")
+                elif os.path.isfile(path):
+                    # 删除单个文件（兼容旧格式）
+                    os.remove(path)
+                    print(f"已删除文件: {path}")
             except Exception as e:
+                print(f"删除失败: {path}, 错误: {e}")
                 # 文件删除失败不影响整体操作
                 pass
