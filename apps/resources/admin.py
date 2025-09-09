@@ -455,12 +455,26 @@ class Model3DAdmin(TortoiseModelAdmin):
                 # 更新所有文件URL路径
                 for field_name in file_fields:
                     current_url = getattr(existing_model, field_name)
-                    if current_url and '/' in current_url:
-                        # 提取相对路径（包含UUID文件夹）
-                        url_parts = current_url.split('/')
-                        if len(url_parts) >= 2:
-                            relative_path = '/'.join(url_parts[-2:])  # UUID文件夹/文件名
-                            payload[field_name] = self._generate_file_url(relative_path, is_public)
+                    # 检查payload中是否已有该字段的值（可能来自新上传的文件）
+                    payload_url = payload.get(field_name)
+                    
+                    print(f"[DEBUG] 处理字段 {field_name}: current_url={current_url}, payload_url={payload_url}")
+                    
+                    if current_url or payload_url:
+                        # 优先使用payload中的URL（新上传的文件），否则使用existing_model中的URL
+                        source_url = payload_url if payload_url else current_url
+                        # 提取文件名（最后一个/后的部分）
+                        filename = source_url.split('/')[-1] if '/' in source_url else source_url
+                        # 构建新的相对路径（UUID文件夹/文件名）
+                        relative_path = f"{model_uuid}/{filename}"
+                        # 生成新的URL - 直接构建完整URL而不是使用_generate_file_url
+                        if is_public:
+                            payload[field_name] = f"/static{settings.PUBLIC_MODEL_PATH}{relative_path}"
+                        else:
+                            payload[field_name] = f"/static{settings.PRIVATE_MODEL_PATH}{relative_path}"
+                        print(f"更新文件URL: {field_name} = {source_url} -> {payload[field_name]}")
+                    else:
+                        print(f"[DEBUG] 跳过字段 {field_name}: 无URL值")
                             
             except Exception as e:
                 print(f"移动UUID文件夹失败: {old_uuid_folder} -> {new_uuid_folder}, 错误: {e}")
@@ -861,12 +875,19 @@ class Model3DAdmin(TortoiseModelAdmin):
     
     async def _save_model_to_database(self, id: UUID | int | None, payload: dict) -> dict | None:
         """保存模型到数据库并验证结果"""
+        print(f"[DEBUG] _save_model_to_database - payload URLs before save:")
+        print(f"  model_file_url: {payload.get('model_file_url')}")
+        print(f"  binary_file_url: {payload.get('binary_file_url')}")
+        
         # 保存模型
         result = await super().save_model(id, payload)
         
         # 验证保存结果
         if result:
             saved_model = await self.model.get(id=result["id"])
+            print(f"[DEBUG] _save_model_to_database - saved model URLs:")
+            print(f"  model_file_url: {saved_model.model_file_url}")
+            print(f"  binary_file_url: {saved_model.binary_file_url}")
             
             # 如果文件URL和文件名没有正确保存，尝试直接更新
             file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
@@ -876,10 +897,12 @@ class Model3DAdmin(TortoiseModelAdmin):
             update_needed = False
             for field_name in all_fields:
                 if field_name in payload and payload[field_name] and getattr(saved_model, field_name) != payload[field_name]:
+                    print(f"[DEBUG] Field {field_name} mismatch - saved: {getattr(saved_model, field_name)}, payload: {payload[field_name]}")
                     setattr(saved_model, field_name, payload[field_name])
                     update_needed = True
             
             if update_needed:
+                print(f"[DEBUG] Updating model fields due to mismatch")
                 await saved_model.save()
         
         return result
