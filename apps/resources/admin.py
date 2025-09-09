@@ -548,8 +548,10 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             # 确定保存的文件名
             if field_name == "model_file_url":
-                # 主模型文件：优先使用原文件名，否则使用"model"
-                if original_filename:
+                # 主模型文件：优先使用model_file_name字段，否则使用原文件名，最后使用"model"
+                if payload.get("model_file_name"):
+                    save_filename = f"{payload['model_file_name']}{file_ext}"
+                elif original_filename:
                     save_filename = original_filename
                 else:
                     save_filename = f"model{file_ext}"
@@ -585,11 +587,9 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 保存文件
             self._save_file_to_disk(file_path, content)
             
-            # 如果是3D模型文件，同时生成压缩的二进制文件（但不覆盖用户上传的binary_file_url）
+            # 如果是3D模型文件，生成压缩的二进制文件
             if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                # 只有在用户没有上传binary_file_url时才自动生成
-                if "binary_file_url" not in payload or not payload["binary_file_url"]:
-                    await self._generate_compressed_model(content, model_uuid, uuid_dir, file_ext, save_filename, payload)
+                await self._generate_compressed_model(content, model_uuid, uuid_dir, file_ext, save_filename, payload)
             
             # 更新文件URL到payload（包含UUID文件夹路径）
             relative_path = f"{model_uuid}/{save_filename}"
@@ -687,11 +687,19 @@ class Model3DAdmin(TortoiseModelAdmin):
             uuid_dir = os.path.join(upload_dir, str(model_uuid))
             os.makedirs(uuid_dir, exist_ok=True)
             
-            # 确定文件名
+            # 确定文件名，优先使用用户传入的文件名
             if field_name == "model_file_url":
-                filename = f"model{file_ext}"
+                # 优先使用用户传入的model_file_name
+                if payload.get("model_file_name"):
+                    filename = f"{payload['model_file_name']}{file_ext}"
+                else:
+                    filename = f"model{file_ext}"
             elif field_name == "binary_file_url":
-                filename = f"binary{file_ext}"
+                # 优先使用用户传入的binary_file_name
+                if payload.get("binary_file_name"):
+                    filename = f"{payload['binary_file_name']}{file_ext}"
+                else:
+                    filename = f"binary{file_ext}"
             else:
                 filename = f"{str(model_uuid)}{file_ext}"
             
@@ -700,15 +708,19 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 保存文件
             self._save_file_to_disk(file_path, model_data)
             
-            # 如果是3D模型文件，同时生成压缩的二进制文件（但不覆盖用户上传的binary_file_url）
+            # 如果是3D模型文件，生成压缩的二进制文件
             if field_name == "model_file_url" and file_ext in [".gltf", ".glb", ".obj", ".fbx"]:
-                # 只有在用户没有上传binary_file_url时才自动生成
-                if "binary_file_url" not in payload or not payload["binary_file_url"]:
-                    await self._generate_compressed_model(model_data, model_uuid, uuid_dir, file_ext, filename, payload)
+                await self._generate_compressed_model(model_data, model_uuid, uuid_dir, file_ext, filename, payload)
             
             # 更新文件URL到payload（包含UUID文件夹路径）
             relative_path = f"{str(model_uuid)}/{filename}"
             payload[field_name] = self._generate_file_url(relative_path, is_public)
+            
+            # 保存文件名到对应的字段
+            if field_name == "model_file_url":
+                payload["model_file_name"] = os.path.splitext(filename)[0]  # 去掉扩展名
+            elif field_name == "binary_file_url":
+                payload["binary_file_name"] = os.path.splitext(filename)[0]  # 去掉扩展名
             
         except Exception as e:
             # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
@@ -734,14 +746,8 @@ class Model3DAdmin(TortoiseModelAdmin):
             
             self._save_file_to_disk(compressed_file_path, compressed_data)
             
-            # 如果提供了payload，更新binary文件信息
-            if payload is not None:
-                # 生成binary文件URL
-                relative_path = f"{model_uuid}/{compressed_filename}"
-                is_public = payload.get('is_public', False)
-                payload['binary_file_url'] = self._generate_file_url(relative_path, is_public)
-                # 保存不带扩展名的文件名到数据库
-                payload['binary_file_name'] = base_name
+            # 压缩文件已保存，不更新binary_file_url字段
+            # 压缩的fastdog文件仅用于内部处理，不保存到数据库字段中
             
         except Exception as e:
             # 记录错误但不中断主流程
