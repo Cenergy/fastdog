@@ -458,7 +458,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                     # 检查payload中是否已有该字段的值（可能来自新上传的文件）
                     payload_url = payload.get(field_name)
                     
-                    print(f"[DEBUG] 处理字段 {field_name}: current_url={current_url}, payload_url={payload_url}")
+
                     
                     # 如果existing_model中有URL，就需要更新路径（无论payload中是否有值）
                     if current_url:
@@ -472,7 +472,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                         new_url = self._generate_file_url(relative_path, is_public)
                         payload[field_name] = new_url
                         print(f"更新文件URL: {field_name} = {source_url} -> {new_url}")
-                        print(f"[DEBUG] payload[{field_name}] 已设置为: {payload[field_name]}")
+
                     elif payload_url:
                         # 如果只有payload中有值（新上传的文件），也要更新
                         filename = payload_url.split('/')[-1] if '/' in payload_url else payload_url
@@ -480,11 +480,12 @@ class Model3DAdmin(TortoiseModelAdmin):
                         new_url = self._generate_file_url(relative_path, is_public)
                         payload[field_name] = new_url
                         print(f"更新新上传文件URL: {field_name} = {payload_url} -> {new_url}")
-                        print(f"[DEBUG] payload[{field_name}] 已设置为: {payload[field_name]}")
+
                     else:
-                        print(f"[DEBUG] 跳过字段 {field_name}: 无URL值")
+                        pass
+
                 
-                print(f"[DEBUG] _move_files_for_public_status_change 完成后的 payload:")
+
                 for field_name in file_fields:
                     print(f"  {field_name}: {payload.get(field_name)}")
                             
@@ -839,7 +840,7 @@ class Model3DAdmin(TortoiseModelAdmin):
     
     async def _handle_file_operations(self, id: UUID | int | None, model_uuid: str, existing_model, payload: dict) -> None:
         """处理所有文件相关操作"""
-        print(f"[DEBUG] _handle_file_operations 开始 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] _handle_file_operations 开始 - model_file_url: {payload.get('model_file_url', 'None')}")
+
         
         # 需要处理的文件字段
         file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
@@ -857,19 +858,19 @@ class Model3DAdmin(TortoiseModelAdmin):
         
         # 处理文件上传
         binary_file_uploaded = False
-        print(f"[DEBUG] 开始处理文件上传 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] 开始处理文件上传 - model_file_url: {payload.get('model_file_url', 'None')}")
+
         for field_name in file_fields:
             if field_name in payload and payload[field_name] is not None:
                 file = payload[field_name]
-                print(f"[DEBUG] 处理字段 {field_name}, 类型: {type(file).__name__}")
+
                 if isinstance(file, UploadFile):
-                    print(f"[DEBUG] 处理UploadFile: {field_name}")
+
                     await self._process_upload_file(file, field_name, model_uuid, upload_dir, is_public, payload)
                     # 记录是否上传了binary文件
                     if field_name == "binary_file_url":
                         binary_file_uploaded = True
                 elif isinstance(file, str) and file.startswith('data:'):
-                    print(f"[DEBUG] 处理base64文件: {field_name}")
+
                     if field_name == "thumbnail_url":
                         await self._process_base64_thumbnail(file, model_uuid, upload_dir, is_public, payload, field_name)
                     else:
@@ -878,48 +879,32 @@ class Model3DAdmin(TortoiseModelAdmin):
                         if field_name == "binary_file_url":
                             binary_file_uploaded = True
                 else:
-                    print(f"[DEBUG] 跳过字段 {field_name}, 不是文件类型")
+                    pass
             else:
-                print(f"[DEBUG] 跳过字段 {field_name}, 不在payload中或为None")
-        print(f"[DEBUG] 文件上传处理完成 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] 文件上传处理完成 - model_file_url: {payload.get('model_file_url', 'None')}")
+                pass
         
         # 如果上传了binary文件，检查并更新对应的GLTF文件
         if binary_file_uploaded:
             await self._update_gltf_after_binary_upload(model_uuid, upload_dir, payload)
         
-        print(f"[DEBUG] _handle_file_operations 结束 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] _handle_file_operations 结束 - model_file_url: {payload.get('model_file_url', 'None')}")
+
     
     def _validate_and_clean_file_urls(self, payload: dict) -> None:
         """验证文件URL字段长度，确保不超过数据库限制"""
-        print(f"[DEBUG] _validate_and_clean_file_urls - payload before validation:")
-        model_url = payload.get('model_file_url')
-        binary_url = payload.get('binary_file_url')
-        print(f"  model_file_url: {model_url[:100] + '...' if model_url and len(str(model_url)) > 100 else model_url}")
-        print(f"  binary_file_url: {binary_url[:100] + '...' if binary_url and len(str(binary_url)) > 100 else binary_url}")
+
         
         file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
         for field_name in file_fields:
             if field_name in payload and payload[field_name]:
                 url_value = payload[field_name]
                 if isinstance(url_value, str) and len(url_value) > 2048:
-                    print(f"[DEBUG] Removing {field_name} due to length: {len(url_value)}")
                     payload.pop(field_name, None)
-                else:
-                    print(f"[DEBUG] {field_name} length OK: {len(url_value) if isinstance(url_value, str) else 'not string'}")
-            else:
-                print(f"[DEBUG] {field_name} not in payload or is None/empty")
         
-        print(f"[DEBUG] _validate_and_clean_file_urls - payload after validation:")
-        model_url_after = payload.get('model_file_url')
-        binary_url_after = payload.get('binary_file_url')
-        print(f"  model_file_url: {model_url_after[:100] + '...' if model_url_after and len(str(model_url_after)) > 100 else model_url_after}")
-        print(f"  binary_file_url: {binary_url_after[:100] + '...' if binary_url_after and len(str(binary_url_after)) > 100 else binary_url_after}")
+
     
     async def _save_model_to_database(self, id: UUID | int | None, payload: dict) -> dict | None:
         """保存模型到数据库并验证结果"""
-        print(f"[DEBUG] _save_model_to_database - payload URLs before save:")
-        print(f"  model_file_url: {payload.get('model_file_url')}")
-        print(f"  binary_file_url: {payload.get('binary_file_url')}")
+
         
         # 保存模型
         result = await super().save_model(id, payload)
@@ -927,9 +912,7 @@ class Model3DAdmin(TortoiseModelAdmin):
         # 验证保存结果
         if result:
             saved_model = await self.model.get(id=result["id"])
-            print(f"[DEBUG] _save_model_to_database - saved model URLs:")
-            print(f"  model_file_url: {saved_model.model_file_url}")
-            print(f"  binary_file_url: {saved_model.binary_file_url}")
+
             
             # 如果文件URL和文件名没有正确保存，尝试直接更新
             file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
@@ -939,19 +922,17 @@ class Model3DAdmin(TortoiseModelAdmin):
             update_needed = False
             for field_name in all_fields:
                 if field_name in payload and payload[field_name] and getattr(saved_model, field_name) != payload[field_name]:
-                    print(f"[DEBUG] Field {field_name} mismatch - saved: {getattr(saved_model, field_name)}, payload: {payload[field_name]}")
                     setattr(saved_model, field_name, payload[field_name])
                     update_needed = True
             
             if update_needed:
-                print(f"[DEBUG] Updating model fields due to mismatch")
                 await saved_model.save()
         
         return result
     
     async def _handle_filename_changes(self, existing_model, model_uuid: str, upload_dir: str, payload: dict) -> None:
         """处理编辑时的文件名变更，重命名磁盘上的现有文件"""
-        print(f"[DEBUG] _handle_filename_changes 开始 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] _handle_filename_changes 开始 - model_file_url: {payload.get('model_file_url', 'None')}")
+
         try:
             uuid_dir = os.path.join(upload_dir, model_uuid)
             
@@ -1016,7 +997,7 @@ class Model3DAdmin(TortoiseModelAdmin):
                                 is_public = payload.get("is_public", existing_model.is_public)
                                 relative_path = f"{model_uuid}/{new_model_name}"
                                 new_url = self._generate_file_url(relative_path, is_public)
-                                print(f"[DEBUG] _handle_filename_changes 重新设置 model_file_url: {new_url[:100]}..." if len(new_url) > 100 else f"[DEBUG] _handle_filename_changes 重新设置 model_file_url: {new_url}")
+
                                 payload["model_file_url"] = new_url
                                 # 保存不带扩展名的文件名
                                 payload["model_file_name"] = os.path.splitext(new_model_name)[0]
@@ -1057,7 +1038,7 @@ class Model3DAdmin(TortoiseModelAdmin):
             print(f"处理文件名变更时出错: {str(e)}")
             # 不抛出异常，避免影响主流程
         
-        print(f"[DEBUG] _handle_filename_changes 结束 - model_file_url: {payload.get('model_file_url', 'None')[:100] if payload.get('model_file_url') else 'None'}..." if payload.get('model_file_url') and len(str(payload.get('model_file_url'))) > 100 else f"[DEBUG] _handle_filename_changes 结束 - model_file_url: {payload.get('model_file_url', 'None')}")
+
     
     async def delete_model(self, id: str) -> bool:
         """删除模型时同时删除相关文件"""
