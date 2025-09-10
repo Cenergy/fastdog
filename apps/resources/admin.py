@@ -333,12 +333,36 @@ class Model3DAdmin(TortoiseModelAdmin):
     search_fields = ["name", "description"]
     list_per_page = 15
     ordering = ["-created_at"]
-    readonly_fields = ["uuid"]  # 设置UUID为只读字段，查看时显示但不可编辑
-
-      # An override to the verbose_name from the model's inner Meta class.
-    verbose_name="模型管理"
-    # An override to the verbose_name_plural from the model's inner Meta class.
-    verbose_name_plural="模型管理"
+    readonly_fields = ["uuid"]
+    verbose_name = "模型管理"
+    verbose_name_plural = "模型管理"
+    
+    # 文件字段配置常量
+    FILE_FIELDS = ["model_file_url", "binary_file_url", "thumbnail_url"]
+    FILENAME_FIELDS = ["model_file_name", "binary_file_name", "thumbnail_file_name"]
+    
+    # 文件类型验证配置
+    FILE_TYPE_CONFIG = {
+        "model_file_url": {
+            "extensions": [".gltf", ".glb", ".obj", ".fbx", ".fastdog"],
+            "accept": ".glb,.gltf,.obj,.fbx,.fastdog",
+            "max_size": 50 * 1024 * 1024,  # 50MB
+            "default_name": "model"
+        },
+        "binary_file_url": {
+            "extensions": [".bin", ".fastdog"],
+            "accept": ".bin,.fastdog", 
+            "max_size": 50 * 1024 * 1024,  # 50MB
+            "default_name": "binary"
+        },
+        "thumbnail_url": {
+            "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+            "accept": ".jpg,.jpeg,.png,.gif,.webp",
+            "max_size": 10 * 1024 * 1024,  # 10MB
+            "default_name": "thumbnail",
+            "list_type": "picture"
+        }
+    }
     
     form_fields = {
         "name": CharField(max_length=255, description="模型名称"),
@@ -351,36 +375,24 @@ class Model3DAdmin(TortoiseModelAdmin):
         "thumbnail_url": TextField(description="预览图", required=False),
         "thumbnail_file_name": CharField(max_length=255, description="预览图文件名", required=False)
     }
-    formfield_overrides = {  # noqa: RUF012
-          "model_file_url": (WidgetType.Upload, {
-            "required": False,
-            "upload_action_name": "upload",
-            "accept": ".glb,.gltf,.obj,.fbx,.fastdog",
-            "multiple": False,
-            "showUploadList": True,
-            "maxCount": 1,
-            "maxFileSize": 50 * 1024 * 1024,  # 50MB
-        }),
-        "binary_file_url": (WidgetType.Upload, {
-            "required": False,
-            "upload_action_name": "upload",
-            "accept": ".bin,.fastdog",
-            "multiple": False,
-            "showUploadList": True,
-            "maxCount": 1,
-            "maxFileSize": 50 * 1024 * 1024,  # 50MB
-        }),
-        "thumbnail_url": (WidgetType.Upload, {
-            "required": False,
-            "upload_action_name": "upload",
-            "accept": ".jpg,.jpeg,.png,.gif,.webp",
-            "multiple": False,
-            "showUploadList": True,
-            "listType": "picture",
-            "maxCount": 1,
-            "maxFileSize": 10 * 1024 * 1024,  # 10MB
-        }) 
-    }
+    @property
+    def formfield_overrides(self):
+        """动态生成formfield_overrides配置"""
+        overrides = {}
+        for field_name, config in self.FILE_TYPE_CONFIG.items():
+            widget_config = {
+                "required": False,
+                "upload_action_name": "upload",
+                "accept": config["accept"],
+                "multiple": False,
+                "showUploadList": True,
+                "maxCount": 1,
+                "maxFileSize": config["max_size"]
+            }
+            if "list_type" in config:
+                widget_config["listType"] = config["list_type"]
+            overrides[field_name] = (WidgetType.Upload, widget_config)
+        return overrides
     def _get_upload_directory(self, is_public: bool) -> str:
         """获取上传目录路径"""
         if is_public:
@@ -397,15 +409,11 @@ class Model3DAdmin(TortoiseModelAdmin):
     
     def _validate_file_type(self, field_name: str, file_ext: str) -> None:
         """验证文件类型"""
-        if field_name == "thumbnail_url":
-            if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                raise ValueError(f"缩略图不支持的格式: {file_ext}")
-        elif field_name == "model_file_url":
-            if file_ext not in [".gltf", ".glb", ".obj", ".fbx", ".fastdog"]:
-                raise ValueError(f"模型文件不支持的格式: {file_ext}")
-        elif field_name == "binary_file_url":
-            if file_ext not in [".bin"]:
-                raise ValueError(f"二进制文件不支持的格式: {file_ext}")
+        if field_name in self.FILE_TYPE_CONFIG:
+            allowed_extensions = self.FILE_TYPE_CONFIG[field_name]["extensions"]
+            if file_ext not in allowed_extensions:
+                field_desc = {"model_file_url": "模型文件", "binary_file_url": "二进制文件", "thumbnail_url": "缩略图"}[field_name]
+                raise ValueError(f"{field_desc}不支持的格式: {file_ext}")
     
     def _save_file_to_disk(self, file_path: str, content: bytes) -> None:
         """保存文件到磁盘"""
@@ -413,6 +421,26 @@ class Model3DAdmin(TortoiseModelAdmin):
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+    
+    def _generate_filename(self, field_name: str, file_ext: str, payload: dict, original_filename: str = None) -> str:
+        """生成文件名的统一方法"""
+        filename_field = field_name.replace("_url", "_name")
+        
+        # 优先使用用户指定的文件名
+        if payload.get(filename_field):
+            return f"{payload[filename_field]}{file_ext}"
+        
+        # 对于缩略图，优先使用原文件名
+        if field_name == "thumbnail_url" and original_filename:
+            return original_filename
+        
+        # 使用原文件名（如果有）
+        if original_filename:
+            return original_filename
+        
+        # 使用默认名称
+        default_name = self.FILE_TYPE_CONFIG[field_name]["default_name"]
+        return f"{default_name}{file_ext}"
     
     async def _get_or_generate_model_uuid(self, id: UUID | int | None) -> tuple[str, object | None]:
         """获取或生成模型UUID"""
@@ -573,33 +601,8 @@ class Model3DAdmin(TortoiseModelAdmin):
             # 验证文件格式
             self._validate_file_type(field_name, file_ext)
             
-            # 确定保存的文件名
-            if field_name == "model_file_url":
-                # 主模型文件：优先使用model_file_name字段，否则使用原文件名，最后使用"model"
-                if payload.get("model_file_name"):
-                    save_filename = f"{payload['model_file_name']}{file_ext}"
-                elif original_filename:
-                    save_filename = original_filename
-                else:
-                    save_filename = f"model{file_ext}"
-            elif field_name == "binary_file_url":
-                # 二进制文件：优先使用binary_file_name字段，否则使用原文件名，最后使用"binary"
-                if payload.get("binary_file_name"):
-                    save_filename = f"{payload['binary_file_name']}{file_ext}"
-                elif original_filename:
-                    save_filename = original_filename
-                else:
-                    save_filename = f"binary{file_ext}"
-            elif field_name == "thumbnail_url":
-                # 预览图：优先使用原文件名，否则使用thumbnail_file_name字段，最后使用"thumbnail"
-                if original_filename:
-                    save_filename = original_filename
-                elif payload.get("thumbnail_file_name"):
-                    save_filename = payload["thumbnail_file_name"]
-                else:
-                    save_filename = f"thumbnail{file_ext}"
-            else:
-                save_filename = original_filename or f"file{file_ext}"
+            # 生成保存的文件名
+            save_filename = self._generate_filename(field_name, file_ext, payload, original_filename)
             
             # 构建完整文件路径
             file_path = os.path.join(uuid_dir, save_filename)
@@ -623,12 +626,8 @@ class Model3DAdmin(TortoiseModelAdmin):
             payload[field_name] = self._generate_file_url(relative_path, is_public)
             
             # 保存实际使用的文件名到对应的字段（不带扩展名）
-            if field_name == "model_file_url":
-                payload["model_file_name"] = os.path.splitext(save_filename)[0]
-            elif field_name == "binary_file_url":
-                payload["binary_file_name"] = os.path.splitext(save_filename)[0]
-            elif field_name == "thumbnail_url":
-                payload["thumbnail_file_name"] = os.path.splitext(save_filename)[0]
+            filename_field = field_name.replace("_url", "_name")
+            payload[filename_field] = os.path.splitext(save_filename)[0]
             
         except Exception as e:
              raise e
@@ -714,21 +713,8 @@ class Model3DAdmin(TortoiseModelAdmin):
             uuid_dir = os.path.join(upload_dir, str(model_uuid))
             os.makedirs(uuid_dir, exist_ok=True)
             
-            # 确定文件名，优先使用用户传入的文件名
-            if field_name == "model_file_url":
-                # 优先使用用户传入的model_file_name
-                if payload.get("model_file_name"):
-                    filename = f"{payload['model_file_name']}{file_ext}"
-                else:
-                    filename = f"model{file_ext}"
-            elif field_name == "binary_file_url":
-                # 优先使用用户传入的binary_file_name
-                if payload.get("binary_file_name"):
-                    filename = f"{payload['binary_file_name']}{file_ext}"
-                else:
-                    filename = f"binary{file_ext}"
-            else:
-                filename = f"{str(model_uuid)}{file_ext}"
+            # 生成文件名
+            filename = self._generate_filename(field_name, file_ext, payload)
             
             file_path = os.path.join(uuid_dir, filename)
             
@@ -744,10 +730,8 @@ class Model3DAdmin(TortoiseModelAdmin):
             payload[field_name] = self._generate_file_url(relative_path, is_public)
             
             # 保存文件名到对应的字段
-            if field_name == "model_file_url":
-                payload["model_file_name"] = os.path.splitext(filename)[0]  # 去掉扩展名
-            elif field_name == "binary_file_url":
-                payload["binary_file_name"] = os.path.splitext(filename)[0]  # 去掉扩展名
+            filename_field = field_name.replace("_url", "_name")
+            payload[filename_field] = os.path.splitext(filename)[0]
             
         except Exception as e:
             # 如果base64处理失败，移除该字段，避免将base64字符串保存到数据库
@@ -840,17 +824,13 @@ class Model3DAdmin(TortoiseModelAdmin):
     
     async def _handle_file_operations(self, id: UUID | int | None, model_uuid: str, existing_model, payload: dict) -> None:
         """处理所有文件相关操作"""
-
-        
-        # 需要处理的文件字段
-        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
         # 检查是否公开
         is_public = payload.get("is_public", False)
         upload_dir = self._get_upload_directory(is_public)
         
         # 如果是编辑现有模型且is_public状态发生变化，需要移动现有文件
         if existing_model and existing_model.is_public != is_public:
-            await self._move_files_for_public_status_change(existing_model, model_uuid, is_public, file_fields, payload)
+            await self._move_files_for_public_status_change(existing_model, model_uuid, is_public, self.FILE_FIELDS, payload)
         
         # 处理文件名变更（编辑时重命名现有文件）
         if existing_model:
@@ -859,7 +839,7 @@ class Model3DAdmin(TortoiseModelAdmin):
         # 处理文件上传
         binary_file_uploaded = False
 
-        for field_name in file_fields:
+        for field_name in self.FILE_FIELDS:
             if field_name in payload and payload[field_name] is not None:
                 file = payload[field_name]
 
@@ -890,11 +870,8 @@ class Model3DAdmin(TortoiseModelAdmin):
 
     
     def _validate_and_clean_file_urls(self, payload: dict) -> None:
-        """验证文件URL字段长度，确保不超过数据库限制"""
-
-        
-        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
-        for field_name in file_fields:
+        """验证并清理文件URL"""
+        for field_name in self.FILE_FIELDS:
             if field_name in payload and payload[field_name]:
                 url_value = payload[field_name]
                 if isinstance(url_value, str) and len(url_value) > 2048:
@@ -915,9 +892,7 @@ class Model3DAdmin(TortoiseModelAdmin):
 
             
             # 如果文件URL和文件名没有正确保存，尝试直接更新
-            file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
-            filename_fields = ["model_file_name", "binary_file_name", "thumbnail_file_name"]
-            all_fields = file_fields + filename_fields
+            all_fields = self.FILE_FIELDS + self.FILENAME_FIELDS
             
             update_needed = False
             for field_name in all_fields:
@@ -1094,9 +1069,8 @@ class Model3DAdmin(TortoiseModelAdmin):
     def _collect_model_files(self, model) -> list:
         """收集模型的主要文件路径"""
         files_to_delete = []
-        file_fields = ["model_file_url", "binary_file_url", "thumbnail_url"]
         
-        for field_name in file_fields:
+        for field_name in self.FILE_FIELDS:
             file_url = getattr(model, field_name, None)
             if file_url:
                 file_path = self._get_file_path_from_url(file_url)
