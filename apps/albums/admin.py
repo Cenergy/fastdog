@@ -436,12 +436,18 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 file_ext, unique_filename = process_upload_file(file)
                 content = await file.read()
                 
-                # 直接处理图片，不保存原始文件
+                # 保存原始文件
+                original_path = os.path.join(upload_dir, unique_filename)
+                save_image_file(original_path, content)
+                
+                # 处理图片生成缩略图和预览图
                 image = Image.open(io.BytesIO(content))
                 dimensions = get_image_dimensions(image)
                 
-                # 生成缩略图和预览图，不保存原始文件
+                # 生成缩略图和预览图，同时保存原始文件
                 result = process_image(image, unique_filename.split('.')[0], upload_dir, dimensions["width"], dimensions["height"], file_ext)
+                # 设置原图URL
+                result["original_url"] = f"/static/uploads/albums/{unique_filename}"
                 # 返回预览图URL作为cover_image
                 return result["preview_url"]
                 
@@ -452,12 +458,19 @@ class AlbumModelAdmin(TortoiseModelAdmin):
                 # 处理base64编码的图片
                 unique_filename, image_data, file_type = process_base64_image(file, upload_dir)
                 
-                # 直接处理图片，不保存原始文件
+                # 保存原始文件
+                original_filename = f"{unique_filename}.{file_type}"
+                original_path = os.path.join(upload_dir, original_filename)
+                save_image_file(original_path, image_data)
+                
+                # 处理图片生成缩略图和预览图
                 image = Image.open(io.BytesIO(image_data))
                 dimensions = get_image_dimensions(image)
                 
-                # 生成缩略图和预览图，不保存原始文件
+                # 生成缩略图和预览图，同时保存原始文件
                 result = process_image(image, unique_filename, upload_dir, dimensions["width"], dimensions["height"], f".{file_type}")
+                # 设置原图URL
+                result["original_url"] = f"/static/uploads/albums/{original_filename}"
                 # 返回预览图URL作为cover_image
                 return result["preview_url"]
             else:
