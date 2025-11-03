@@ -18,6 +18,7 @@ from apps.tasks import  admin as TaskModelAdmin
 from apps.ideas import  admin as IdeaModelAdmin
 from apps.resources import  admin as ResourcesModelAdmin
 from apps.geos import admin as GeoModelAdmin
+from apps.files import admin as FilesModelAdmin
 
 # 配置日志
 logger = logging.getLogger(__name__)
