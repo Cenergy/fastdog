@@ -25,7 +25,7 @@ dependencies = [
     "tortoise-orm>=0.24.2",
     "gunicorn>=21.2.0",
     "fastapi-mcp>=0.3.1",
-    "python-magic>=0.4.27;",
+    "python-magic>=0.4.27",
     "python-magic-bin>=0.4.14; sys_platform == 'win32'",
 ]
 
